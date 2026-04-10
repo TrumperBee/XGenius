@@ -1,8 +1,26 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Card, CardHeader, CardTitle, CardContent, StatCard, Badge, ProgressBar, GuardianBadge, Button } from '@/components/ui';
-import { TrendingUp, Target, Award, Calendar, ChevronRight, Loader2, AlertTriangle, Star, Zap, Clock, ExternalLink, RefreshCw, WifiOff } from 'lucide-react';
+import { 
+  GlassCard, 
+  GlassCardHeader, 
+  GlassCardContent, 
+  StatCardGlass, 
+  BadgeGlass, 
+  ProgressBarGlass, 
+  GuardianBadge, 
+  Button,
+  QuickActionGlass,
+  MatchCardGlass,
+  SectionTitle,
+  SectionSubtitle,
+  LoadingSpinner,
+  SkeletonGlass
+} from '@/components/Background';
+import { 
+  TrendingUp, Target, Award, Calendar, ChevronRight, Loader2, AlertTriangle, 
+  Star, Zap, Clock, ExternalLink, RefreshCw, WifiOff 
+} from 'lucide-react';
 import Link from 'next/link';
 
 interface FixturesData {
@@ -96,18 +114,30 @@ function PageSkeleton() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="h-24 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse">
-            <div className="p-5 h-full flex flex-col justify-between">
-              <div className="h-3 bg-[var(--bg-tertiary)] rounded w-1/2" />
-              <div className="h-6 bg-[var(--bg-tertiary)] rounded w-3/4" />
-            </div>
-          </div>
+          <GlassCard key={i}>
+            <GlassCardContent className="flex flex-col justify-between h-full">
+              <SkeletonGlass className="h-3 w-1/2 mb-2" />
+              <SkeletonGlass className="h-6 w-3/4" />
+            </GlassCardContent>
+          </GlassCard>
         ))}
       </div>
-      <div className="h-48 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse" />
+      <GlassCard>
+        <GlassCardContent className="h-48">
+          <SkeletonGlass className="h-full w-full" />
+        </GlassCardContent>
+      </GlassCard>
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 h-64 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse" />
-        <div className="h-64 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse" />
+        <GlassCard className="lg:col-span-2">
+          <GlassCardContent className="h-64">
+            <SkeletonGlass className="h-full w-full" />
+          </GlassCardContent>
+        </GlassCard>
+        <GlassCard>
+          <GlassCardContent className="h-64">
+            <SkeletonGlass className="h-full w-full" />
+          </GlassCardContent>
+        </GlassCard>
       </div>
     </div>
   );
@@ -207,8 +237,8 @@ export default function HomePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">XGenius</h1>
-          <p className="text-sm text-[var(--text-muted)]">Autonomous Football Prediction Engine</p>
+          <SectionTitle>XGenius</SectionTitle>
+          <SectionSubtitle>Autonomous Football Prediction Engine</SectionSubtitle>
         </div>
         <GuardianBadge quality={fixturesData?.verification?.verified ? 'high' : 'low'} />
       </div>
@@ -216,37 +246,37 @@ export default function HomePage() {
       {isLoading && !stats ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-24 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse">
-              <div className="p-5 h-full flex flex-col justify-between">
-                <div className="h-3 bg-[var(--bg-tertiary)] rounded w-1/2" />
-                <div className="h-6 bg-[var(--bg-tertiary)] rounded w-3/4" />
-              </div>
-            </div>
+            <GlassCard key={i}>
+              <GlassCardContent className="flex flex-col justify-between h-full">
+                <SkeletonGlass className="h-3 w-1/2 mb-2" />
+                <SkeletonGlass className="h-6 w-3/4" />
+              </GlassCardContent>
+            </GlassCard>
           ))}
         </div>
       ) : stats ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard 
+          <StatCardGlass 
             label="Yesterday Accuracy" 
             value={`${stats.yesterday.accuracy}%`} 
             trend={{ value: stats.yesterday.change, positive: stats.yesterday.change >= 0 }} 
             icon={Target} 
             subtitle={stats.yesterday.total > 0 ? `${stats.yesterday.correct}/${stats.yesterday.total} correct` : 'No matches'}
           />
-          <StatCard 
+          <StatCardGlass 
             label="This Week" 
             value={`${stats.this_week.accuracy}%`} 
             trend={{ value: stats.this_week.change, positive: stats.this_week.change >= 0 }} 
             icon={TrendingUp} 
             subtitle={stats.this_week.total > 0 ? `${stats.this_week.correct}/${stats.this_week.total} correct` : 'No matches'}
           />
-          <StatCard 
+          <StatCardGlass 
             label="Total Predictions" 
             value={stats.total_predictions.toLocaleString()} 
             icon={Award}
             subtitle={`${stats.correct_predictions} correct (${stats.overall_accuracy}%)`}
           />
-          <StatCard 
+          <StatCardGlass 
             label="ROI" 
             value={`${stats.roi.roi >= 0 ? '+' : ''}${stats.roi.roi}%`} 
             trend={{ value: stats.roi.change, positive: stats.roi.change >= 0 }} 
@@ -257,29 +287,29 @@ export default function HomePage() {
       ) : null}
 
       {highConfidenceMatches.length > 0 && (
-        <Card className="border-yellow-500/30 bg-gradient-to-r from-yellow-500/5 to-transparent">
-          <CardHeader>
+        <GlassCard className="border-yellow-500/30">
+          <GlassCardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wider flex items-center gap-2">
                 <Star className="w-5 h-5 text-yellow-400" />
                 High Confidence Predictions
-                <Badge variant="warning">{highConfidenceMatches.length} picks</Badge>
-              </CardTitle>
+                <BadgeGlass variant="warning">{highConfidenceMatches.length} picks</BadgeGlass>
+              </h3>
               <Link href="/dashboard?filter=high-confidence" className="text-xs text-yellow-400 hover:underline flex items-center gap-1">
                 View all <ChevronRight className="w-3 h-3" />
               </Link>
             </div>
-          </CardHeader>
-          <CardContent>
+          </GlassCardHeader>
+          <GlassCardContent>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {highConfidenceMatches.slice(0, 3).map((match: any) => (
                 <Link 
                   key={match.match_id} 
                   href={`/match/${match.match_id}`}
-                  className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-yellow-500/10 border border-yellow-500/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_15px_rgba(234,179,8,0.2)]"
+                  className="p-3 rounded-xl bg-black/30 backdrop-blur-sm border border-white/10 hover:border-yellow-500/30 transition-all duration-300 hover:-translate-y-0.5"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <Badge variant="info" className="text-xs">{match.competition}</Badge>
+                    <BadgeGlass variant="info">{match.competition}</BadgeGlass>
                     <span className="text-xs text-yellow-400 flex items-center gap-1">
                       <Zap className="w-3 h-3" />
                       {match.confidence}%
@@ -297,113 +327,113 @@ export default function HomePage() {
                 </Link>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
       )}
 
       {loadingFixtures ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex items-center gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-green-400" />
-            <span className="text-sm text-[var(--text-muted)]">Loading matches...</span>
+            <span className="text-sm text-gray-400">Loading matches...</span>
           </div>
         </div>
       ) : matches.length > 0 ? (
-        <Card>
-          <CardHeader>
+        <GlassCard>
+          <GlassCardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Today's Matches ({matches.length})</CardTitle>
+              <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wider">Today&apos;s Matches ({matches.length})</h3>
               <Link href="/today" className="text-xs text-blue-400 hover:underline flex items-center gap-1">
                 View all <ChevronRight className="w-3 h-3" />
               </Link>
             </div>
-          </CardHeader>
-          <CardContent>
+          </GlassCardHeader>
+          <GlassCardContent>
             <div className="grid gap-3 md:grid-cols-2">
               {matches.slice(0, 4).map((match: any) => (
                 <Link 
                   key={match.id} 
                   href={`/match/${match.id}`}
-                  className="p-4 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30 flex items-center justify-between transition-all duration-300 hover:-translate-y-0.5"
+                  className="p-4 rounded-xl bg-black/30 backdrop-blur-sm border border-white/10 hover:border-blue-500/30 flex items-center justify-between transition-all duration-300 hover:-translate-y-0.5"
                 >
                   <div className="flex items-center gap-3">
                     <div className="text-center">
-                      <p className="font-medium text-sm">{match.home_team.short_name}</p>
-                      <p className="text-xs text-[var(--text-muted)]">vs</p>
-                      <p className="font-medium text-sm">{match.away_team.short_name}</p>
+                      <p className="font-medium text-sm text-white">{match.home_team.short_name}</p>
+                      <p className="text-xs text-gray-500">vs</p>
+                      <p className="font-medium text-sm text-white">{match.away_team.short_name}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <Badge variant="info">{match.league}</Badge>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">
+                    <BadgeGlass variant="info">{match.league}</BadgeGlass>
+                    <p className="text-xs text-gray-500 mt-1">
                       {new Date(match.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                 </Link>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
       ) : (
-        <Card className="border-yellow-500/30 bg-gradient-to-r from-yellow-500/5 to-transparent">
-          <CardContent className="py-12 text-center">
+        <GlassCard className="border-yellow-500/30">
+          <GlassCardContent className="py-12 text-center">
             <Calendar className="w-12 h-12 mx-auto text-yellow-500 mb-3" />
-            <p className="text-lg font-medium mb-2">{fixturesData?.friendly_message?.title || 'No matches today'}</p>
-            <p className="text-sm text-[var(--text-muted)]">{fixturesData?.friendly_message?.subtitle}</p>
+            <p className="text-lg font-medium mb-2 text-white">{fixturesData?.friendly_message?.title || 'No matches today'}</p>
+            <p className="text-sm text-gray-400">{fixturesData?.friendly_message?.subtitle}</p>
             <Link href="/today" className="mt-4 inline-block px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white rounded-lg text-sm hover:from-green-500 hover:to-emerald-400 transition-all">
               Check upcoming matches
             </Link>
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
       )}
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Weekly Performance</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <GlassCard className="lg:col-span-2">
+          <GlassCardHeader>
+            <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wider">Weekly Performance</h3>
+          </GlassCardHeader>
+          <GlassCardContent>
             {loadingStats ? (
               <div className="space-y-3">
                 {[1, 2, 3, 4, 5, 6, 7].map(i => (
-                  <div key={i} className="h-8 bg-[var(--bg-tertiary)] rounded animate-pulse" />
+                  <SkeletonGlass key={i} className="h-8 w-full" />
                 ))}
               </div>
             ) : (
               <div className="space-y-3">
                 {sortedWeekly.map((d: any) => (
                   <div key={d.day} className="flex items-center gap-3">
-                    <span className="text-xs text-[var(--text-muted)] w-8">{d.day}</span>
-                    <ProgressBar 
+                    <span className="text-xs text-gray-500 w-8">{d.day}</span>
+                    <ProgressBarGlass 
                       value={d.accuracy} 
                       className="flex-1" 
                       color={d.accuracy >= 70 ? 'var(--accent-green)' : d.accuracy >= 60 ? 'var(--accent-yellow)' : 'var(--accent-red)'} 
                     />
-                    <span className="text-xs font-mono w-10 text-right">{d.accuracy}%</span>
-                    <span className="text-xs text-[var(--text-muted)] w-16 text-right">{d.correct}/{d.total}</span>
+                    <span className="text-xs font-mono w-10 text-right text-white">{d.accuracy}%</span>
+                    <span className="text-xs text-gray-500 w-16 text-right">{d.correct}/{d.total}</span>
                   </div>
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>League Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <GlassCard>
+          <GlassCardHeader>
+            <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wider">League Breakdown</h3>
+          </GlassCardHeader>
+          <GlassCardContent>
             {loadingStats ? (
               <div className="space-y-3">
                 {[1, 2, 3, 4, 5].map(i => (
-                  <div key={i} className="h-8 bg-[var(--bg-tertiary)] rounded animate-pulse" />
+                  <SkeletonGlass key={i} className="h-8 w-full" />
                 ))}
               </div>
             ) : (
               <div className="space-y-3">
                 {sortedLeagues.map(([league, data]: [string, any]) => (
                   <div key={league} className="flex items-center justify-between">
-                    <span className="text-sm">{league}</span>
+                    <span className="text-sm text-gray-300">{league}</span>
                     <span className={`font-bold ${
                       data.accuracy >= 70 ? 'text-green-400' : 
                       data.accuracy >= 60 ? 'text-yellow-400' : 'text-red-400'
@@ -414,45 +444,33 @@ export default function HomePage() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </GlassCardContent>
+        </GlassCard>
       </div>
 
       {stats?.last_updated && (
-        <div className="text-center text-xs text-[var(--text-muted)]">
+        <div className="text-center text-xs text-gray-500">
           Last updated: {new Date(stats.last_updated).toLocaleString()}
           <span className="mx-2">•</span>
           Next update: {new Date(stats.next_update).toLocaleString()}
         </div>
       )}
 
-      <Card>
-        <CardHeader>
+      <GlassCard>
+        <GlassCardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Quick Actions</CardTitle>
+            <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wider">Quick Actions</h3>
           </div>
-        </CardHeader>
-        <CardContent>
+        </GlassCardHeader>
+        <GlassCardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Link href="/today" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
-              <Calendar className="w-5 h-5 mx-auto mb-1 text-blue-400" />
-              <span className="text-xs">Today's Picks</span>
-            </Link>
-            <Link href="/analyze" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-green-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
-              <TrendingUp className="w-5 h-5 mx-auto mb-1 text-green-400" />
-              <span className="text-xs">Analyze</span>
-            </Link>
-            <Link href="/yesterday" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-yellow-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
-              <Award className="w-5 h-5 mx-auto mb-1 text-yellow-400" />
-              <span className="text-xs">Yesterday</span>
-            </Link>
-            <Link href="/dashboard" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-purple-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
-              <Target className="w-5 h-5 mx-auto mb-1 text-purple-400" />
-              <span className="text-xs">Dashboard</span>
-            </Link>
+            <QuickActionGlass href="/today" icon={Calendar} label="Today's Picks" color="blue" />
+            <QuickActionGlass href="/analyze" icon={TrendingUp} label="Analyze" color="green" />
+            <QuickActionGlass href="/yesterday" icon={Award} label="Yesterday" color="yellow" />
+            <QuickActionGlass href="/dashboard" icon={Target} label="Dashboard" color="purple" />
           </div>
-        </CardContent>
-      </Card>
+        </GlassCardContent>
+      </GlassCard>
     </div>
   );
 }
