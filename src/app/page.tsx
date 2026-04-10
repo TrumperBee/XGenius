@@ -9,7 +9,6 @@ import {
   BadgeGlass, 
   ProgressBarGlass, 
   GuardianBadge, 
-  Button,
   QuickActionGlass,
   MatchCardGlass,
   SectionTitle,
@@ -17,6 +16,7 @@ import {
   LoadingSpinner,
   SkeletonGlass
 } from '@/components/Background';
+import { Button } from '@/components/ui';
 import { 
   TrendingUp, Target, Award, Calendar, ChevronRight, Loader2, AlertTriangle, 
   Star, Zap, Clock, ExternalLink, RefreshCw, WifiOff 

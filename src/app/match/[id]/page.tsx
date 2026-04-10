@@ -3,6 +3,7 @@
 import { use, useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, Badge } from '@/components/ui';
 import { NetworkStatusBanner } from '@/components/NetworkStatus';
+import { MatchPoll } from '@/components/MatchPoll';
 import { Loader2, Calendar, Trophy, TrendingUp, Zap, Target, BarChart3, Clock, AlertCircle, RefreshCw, CheckCircle2, XCircle, Info } from 'lucide-react';
 
 interface Fixture {
@@ -593,7 +594,8 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-6">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="w-5 h-5" />
@@ -746,6 +748,31 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
               )}
             </CardContent>
           </Card>
+          </div>
+
+          <div className="space-y-6">
+            {prediction && fixture && (
+              <MatchPoll
+                matchId={matchId}
+                homeTeam={fixture.home_team.name}
+                awayTeam={fixture.away_team.name}
+                homeShort={fixture.home_team.short}
+                awayShort={fixture.away_team.short}
+                homeLogo={fixture.home_team.logo}
+                awayLogo={fixture.away_team.logo}
+                league={fixture.league}
+                prediction={{
+                  predictedWinner: prediction.predictedWinner,
+                  correctScore: prediction.correctScore,
+                  confidence: prediction.confidence,
+                  homeGoals: prediction.homeGoals,
+                  awayGoals: prediction.awayGoals,
+                  overUnder: prediction.overUnder,
+                  btts: prediction.btts,
+                }}
+              />
+            )}
+          </div>
         </div>
 
         <Card>

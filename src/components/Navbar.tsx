@@ -14,6 +14,8 @@ import {
   Calendar
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { NotificationBell } from '@/components/NotificationBell';
+import { UserAvatar } from '@/components/UserAvatar';
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
@@ -61,11 +63,9 @@ export function Navbar() {
             })}
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-tertiary)] text-xs">
-              <span className="w-2 h-2 rounded-full bg-[var(--accent-green)] animate-pulse" />
-              <span className="text-[var(--text-muted)]">Live predictions</span>
-            </div>
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+            <UserAvatar />
           </div>
         </div>
       </div>

@@ -1,0 +1,333 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--text-muted, #888);
+}
+
+.section {
+  background: var(--bg-card, #1a1a1a);
+  border: 1px solid var(--border-color, #2a2a2a);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.sectionHeader h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.confidenceBadge {
+  font-size: 0.6875rem;
+  padding: 0.25rem 0.5rem;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.voteCount {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  background: var(--bg-tertiary, #222);
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.predictionCard {
+  background: var(--bg-tertiary, #222);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.scorePrediction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.scorePrediction .winner {
+  color: #22c55e;
+}
+
+.vs {
+  font-size: 0.875rem;
+  color: var(--text-muted, #888);
+  font-weight: 400;
+}
+
+.predictionMeta {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+}
+
+.saveBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary, #333);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 8px;
+  color: var(--text-primary, #fff);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: #22c55e;
+}
+
+.saveBtn.saved {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.saveBtn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.votePrompt {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #aaa);
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.winnerButtons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.voteBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1rem 0.5rem;
+  background: var(--bg-tertiary, #222);
+  border: 2px solid var(--border-color, #2a2a2a);
+  border-radius: 10px;
+  color: var(--text-primary, #fff);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.voteBtn:hover {
+  transform: translateY(-2px);
+}
+
+.voteBtn.selected {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.homeBtn.selected {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.drawBtn.selected {
+  border-color: #888;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.awayBtn.selected {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.votePercent {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  font-weight: 400;
+}
+
+.scoreInput {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color, #2a2a2a);
+}
+
+.scoreInput label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.scoreSelectors {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.scoreSelectors select {
+  width: 60px;
+  padding: 0.5rem;
+  background: var(--bg-tertiary, #333);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 6px;
+  color: var(--text-primary, #fff);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.scoreSelectors select:focus {
+  outline: none;
+  border-color: #22c55e;
+}
+
+.scoreSelectors span {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+}
+
+.submitVoteBtn {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.submitVoteBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+}
+
+.submitVoteBtn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.votedSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.votedCard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 10px;
+}
+
+.votedCard > div {
+  flex: 1;
+}
+
+.votedLabel {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+}
+
+.votedChoice {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+.votedScore {
+  font-weight: 400;
+  color: var(--text-secondary, #aaa);
+}
+
+.changeVoteBtn {
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-color, #444);
+  border-radius: 6px;
+  color: var(--text-muted, #888);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.changeVoteBtn:hover {
+  border-color: var(--text-muted, #888);
+  color: var(--text-primary, #fff);
+}
+
+.pollResults {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.resultBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  min-width: 40px;
+  transition: width 0.3s ease;
+}
+
+.homeBar {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.drawBar {
+  background: rgba(128, 128, 128, 0.2);
+  color: #aaa;
+}
+
+.awayBar {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.resultBar span {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}

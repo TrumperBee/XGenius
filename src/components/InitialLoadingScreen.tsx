@@ -420,11 +420,13 @@ export function TabLoadingOverlay() {
   );
 }
 
-export function PageBackground({ children, type = 'default' }: { children: React.ReactNode; type?: 'home' | 'analyzer' | 'dashboard' | 'stats' }) {
+export function PageBackground({ children, type = 'default' }: { children: React.ReactNode; type?: 'home' | 'today' | 'yesterday' | 'analyzer' | 'dashboard' | 'stats' | 'default' }) {
   const backgrounds: Record<string, string> = {
     home: 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=1920&q=40',
-    analyzer: 'https://images.unsplash.com/photo-1489944440615-453fc2b6a9a9?w=1920&q=40',
-    dashboard: 'https://images.unsplash.com/photo-1459865264687-595d652de67e?w=1920&q=40',
+    today: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=1920&q=40',
+    yesterday: 'https://images.unsplash.com/photo-1489944440615-453fc2b6a9a9?w=1920&q=40',
+    analyzer: 'https://images.unsplash.com/photo-1459865264687-595d652de67e?w=1920&q=40',
+    dashboard: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=1920&q=40',
     stats: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=1920&q=40',
     default: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=1920&q=40',
   };
