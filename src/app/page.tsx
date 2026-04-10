@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Card, CardHeader, CardTitle, CardContent, StatCard, Badge, ProgressBar, GuardianBadge } from '@/components/ui';
-import { TrendingUp, Target, Award, Calendar, ChevronRight, Loader2, AlertTriangle, Star, Zap, Clock, ExternalLink } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Card, CardHeader, CardTitle, CardContent, StatCard, Badge, ProgressBar, GuardianBadge, Button } from '@/components/ui';
+import { TrendingUp, Target, Award, Calendar, ChevronRight, Loader2, AlertTriangle, Star, Zap, Clock, ExternalLink, RefreshCw, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 
 interface FixturesData {
@@ -56,46 +56,116 @@ interface HighConfidenceMatch {
   match_date: string;
 }
 
+function ConnectionError({ onRetry }: { onRetry: () => void }) {
+  const [countdown, setCountdown] = useState(30);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          onRetry();
+          return 30;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [onRetry]);
+
+  return (
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[var(--bg-card)] border border-red-500/30 rounded-2xl p-8 max-w-md text-center">
+        <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+          <WifiOff className="w-8 h-8 text-red-400" />
+        </div>
+        <h3 className="text-xl font-bold text-white mb-2">Connection Error</h3>
+        <p className="text-gray-400 mb-6">Unable to load data. Please check your connection and try again.</p>
+        <Button onClick={onRetry} variant="glow" className="mb-4">
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Retry Now
+        </Button>
+        <p className="text-xs text-gray-500">Auto-retry in {countdown} seconds...</p>
+      </div>
+    </div>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="h-24 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse">
+            <div className="p-5 h-full flex flex-col justify-between">
+              <div className="h-3 bg-[var(--bg-tertiary)] rounded w-1/2" />
+              <div className="h-6 bg-[var(--bg-tertiary)] rounded w-3/4" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="h-48 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse" />
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 h-64 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse" />
+        <div className="h-64 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [fixturesData, setFixturesData] = useState<FixturesData | null>(null);
   const [statsData, setStatsData] = useState<StatsData | null>(null);
   const [loadingFixtures, setLoadingFixtures] = useState(true);
   const [loadingStats, setLoadingStats] = useState(true);
+  const [errorFixtures, setErrorFixtures] = useState(false);
+  const [errorStats, setErrorStats] = useState(false);
 
-  useEffect(() => {
-    fetchFixtures();
-    fetchStats();
-  }, []);
-
-  async function fetchFixtures() {
+  const fetchFixtures = useCallback(async () => {
+    setErrorFixtures(false);
+    setLoadingFixtures(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      const response = await fetch(`/api/fixtures?date=${today}&days=1`);
+      const response = await fetch(`/api/fixtures?date=${today}&days=1`, {
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!response.ok) throw new Error('Network error');
       const data = await response.json();
       setFixturesData(data);
     } catch (e) {
       console.error('Fixtures fetch error:', e);
+      setErrorFixtures(true);
     }
     setLoadingFixtures(false);
-  }
+  }, []);
 
-  async function fetchStats() {
+  const fetchStats = useCallback(async () => {
+    setErrorStats(false);
+    setLoadingStats(true);
     try {
-      const response = await fetch('/api/stats?action=stats');
+      const response = await fetch('/api/stats?action=stats', {
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!response.ok) throw new Error('Network error');
       const data = await response.json();
       setStatsData(data);
     } catch (e) {
       console.error('Stats fetch error:', e);
+      setErrorStats(true);
     }
     setLoadingStats(false);
-  }
+  }, []);
+
+  useEffect(() => {
+    fetchFixtures();
+    fetchStats();
+  }, [fetchFixtures, fetchStats]);
 
   const matches = fixturesData?.fixtures_by_date ? 
     Object.values(fixturesData.fixtures_by_date).flat() : [];
 
   const stats = statsData?.data;
   
-  const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const sortedWeekly = stats?.weekly_performance 
     ? Object.entries(stats.weekly_performance)
         .sort((a, b) => {
@@ -112,6 +182,26 @@ export default function HomePage() {
     : [];
 
   const highConfidenceMatches = stats?.high_confidence_predictions || [];
+  const isLoading = loadingFixtures || loadingStats;
+  const hasError = errorFixtures || errorStats;
+
+  if (hasError) {
+    return (
+      <>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">XGenius</h1>
+              <p className="text-sm text-[var(--text-muted)]">Autonomous Football Prediction Engine</p>
+            </div>
+            <GuardianBadge quality="low" />
+          </div>
+          <PageSkeleton />
+        </div>
+        <ConnectionError onRetry={() => { fetchFixtures(); fetchStats(); }} />
+      </>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -123,10 +213,15 @@ export default function HomePage() {
         <GuardianBadge quality={fixturesData?.verification?.verified ? 'high' : 'low'} />
       </div>
 
-      {loadingStats ? (
+      {isLoading && !stats ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-24 bg-[var(--bg-tertiary)] rounded-lg animate-pulse" />
+            <div key={i} className="h-24 bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] animate-pulse">
+              <div className="p-5 h-full flex flex-col justify-between">
+                <div className="h-3 bg-[var(--bg-tertiary)] rounded w-1/2" />
+                <div className="h-6 bg-[var(--bg-tertiary)] rounded w-3/4" />
+              </div>
+            </div>
           ))}
         </div>
       ) : stats ? (
@@ -181,7 +276,7 @@ export default function HomePage() {
                 <Link 
                   key={match.match_id} 
                   href={`/match/${match.match_id}`}
-                  className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-yellow-500/10 border border-yellow-500/20 transition-colors"
+                  className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-yellow-500/10 border border-yellow-500/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_15px_rgba(234,179,8,0.2)]"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="info" className="text-xs">{match.competition}</Badge>
@@ -208,7 +303,10 @@ export default function HomePage() {
 
       {loadingFixtures ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-6 h-6 animate-spin text-green-400" />
+            <span className="text-sm text-[var(--text-muted)]">Loading matches...</span>
+          </div>
         </div>
       ) : matches.length > 0 ? (
         <Card>
@@ -226,7 +324,7 @@ export default function HomePage() {
                 <Link 
                   key={match.id} 
                   href={`/match/${match.id}`}
-                  className="p-4 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 flex items-center justify-between transition-colors"
+                  className="p-4 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30 flex items-center justify-between transition-all duration-300 hover:-translate-y-0.5"
                 >
                   <div className="flex items-center gap-3">
                     <div className="text-center">
@@ -247,12 +345,12 @@ export default function HomePage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-yellow-500/30 bg-yellow-500/5">
+        <Card className="border-yellow-500/30 bg-gradient-to-r from-yellow-500/5 to-transparent">
           <CardContent className="py-12 text-center">
             <Calendar className="w-12 h-12 mx-auto text-yellow-500 mb-3" />
             <p className="text-lg font-medium mb-2">{fixturesData?.friendly_message?.title || 'No matches today'}</p>
             <p className="text-sm text-[var(--text-muted)]">{fixturesData?.friendly_message?.subtitle}</p>
-            <Link href="/today" className="mt-4 inline-block px-4 py-2 bg-blue-500 text-white rounded-lg text-sm">
+            <Link href="/today" className="mt-4 inline-block px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white rounded-lg text-sm hover:from-green-500 hover:to-emerald-400 transition-all">
               Check upcoming matches
             </Link>
           </CardContent>
@@ -336,19 +434,19 @@ export default function HomePage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Link href="/today" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 text-center transition-colors">
+            <Link href="/today" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
               <Calendar className="w-5 h-5 mx-auto mb-1 text-blue-400" />
               <span className="text-xs">Today's Picks</span>
             </Link>
-            <Link href="/analyze" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 text-center transition-colors">
+            <Link href="/analyze" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-green-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
               <TrendingUp className="w-5 h-5 mx-auto mb-1 text-green-400" />
               <span className="text-xs">Analyze</span>
             </Link>
-            <Link href="/yesterday" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 text-center transition-colors">
+            <Link href="/yesterday" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-yellow-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
               <Award className="w-5 h-5 mx-auto mb-1 text-yellow-400" />
               <span className="text-xs">Yesterday</span>
             </Link>
-            <Link href="/dashboard" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-blue-500/10 text-center transition-colors">
+            <Link href="/dashboard" className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-purple-500/10 text-center transition-all duration-300 hover:-translate-y-0.5">
               <Target className="w-5 h-5 mx-auto mb-1 text-purple-400" />
               <span className="text-xs">Dashboard</span>
             </Link>

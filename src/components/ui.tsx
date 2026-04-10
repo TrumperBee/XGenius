@@ -4,11 +4,16 @@ import { LucideIcon } from 'lucide-react';
 interface CardProps {
   children: React.ReactNode;
   className?: string;
+  hover?: boolean;
 }
 
-export function Card({ children, className }: CardProps) {
+export function Card({ children, className, hover = true }: CardProps) {
   return (
-    <div className={clsx('bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg', className)}>
+    <div className={clsx(
+      'bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg transition-all duration-300',
+      hover && 'hover:border-[var(--accent-green)] hover:shadow-[0_0_20px_rgba(34,197,94,0.2),0_0_40px_rgba(34,197,94,0.1)] hover:-translate-y-0.5',
+      className
+    )}>
       {children}
     </div>
   );
@@ -97,10 +102,10 @@ interface BadgeProps {
 export function Badge({ children, variant = 'default', className }: BadgeProps) {
   const variants = {
     default: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]',
-    success: 'bg-[var(--accent-green)]/20 text-[var(--accent-green)]',
-    warning: 'bg-[var(--accent-yellow)]/20 text-[var(--accent-yellow)]',
-    danger: 'bg-[var(--accent-red)]/20 text-[var(--accent-red)]',
-    info: 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]',
+    success: 'bg-[var(--accent-green)]/20 text-[var(--accent-green)] border border-[var(--accent-green)]/30',
+    warning: 'bg-[var(--accent-yellow)]/20 text-[var(--accent-yellow)] border border-[var(--accent-yellow)]/30',
+    danger: 'bg-[var(--accent-red)]/20 text-[var(--accent-red)] border border-[var(--accent-red)]/30',
+    info: 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)] border border-[var(--accent-blue)]/30',
   };
 
   return (
@@ -161,7 +166,7 @@ export function ConfidenceGauge({ score, size = 'md' }: ConfidenceGaugeProps) {
 }
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'glow';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -170,6 +175,7 @@ export function Button({ children, variant = 'primary', size = 'md', className, 
     primary: 'bg-[var(--accent-blue)] hover:bg-[#2563eb] text-white',
     secondary: 'bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-primary)]',
     ghost: 'bg-transparent hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]',
+    glow: 'bg-gradient-to-r from-[var(--accent-green)] to-emerald-500 hover:from-emerald-500 hover:to-[var(--accent-green)] text-white shadow-[0_0_20px_rgba(34,197,94,0.3)] hover:shadow-[0_0_30px_rgba(34,197,94,0.5)]',
   };
 
   const sizes = {
@@ -181,7 +187,7 @@ export function Button({ children, variant = 'primary', size = 'md', className, 
   return (
     <button
       className={clsx(
-        'rounded-md font-medium transition-colors disabled:opacity-50',
+        'rounded-md font-medium transition-all duration-300 disabled:opacity-50',
         variants[variant],
         sizes[size],
         className
@@ -197,21 +203,27 @@ interface ProgressBarProps {
   value: number;
   max?: number;
   color?: string;
+  glow?: boolean;
   className?: string;
 }
 
-export function ProgressBar({ value, max = 100, color, className }: ProgressBarProps) {
+export function ProgressBar({ value, max = 100, color, glow = true, className }: ProgressBarProps) {
   const percentage = Math.min(100, (value / max) * 100);
   
   return (
     <div className={clsx('h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden', className)}>
       <div
-        className="h-full rounded-full transition-all duration-500"
+        className={clsx(
+          'h-full rounded-full transition-all duration-500 relative',
+          glow && percentage > 10 && 'shadow-[0_0_10px_rgba(34,197,94,0.5)]'
+        )}
         style={{
           width: `${percentage}%`,
-          backgroundColor: color || 'var(--accent-blue)'
+          backgroundColor: color || 'var(--accent-green)'
         }}
-      />
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+      </div>
     </div>
   );
 }
@@ -238,5 +250,90 @@ export function GuardianBadge({ quality, showLabel = true, lastVerified }: Guard
       {showLabel && <span className="font-medium">{label}</span>}
       {lastVerified && <span className="text-[var(--text-muted)] text-xs ml-1">{lastVerified}</span>}
     </div>
+  );
+}
+
+interface TeamLogoProps {
+  src?: string | null;
+  name: string;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+}
+
+export function TeamLogo({ src, name, size = 'md', className }: TeamLogoProps) {
+  const sizes = {
+    sm: 'w-8 h-8',
+    md: 'w-12 h-12',
+    lg: 'w-16 h-16',
+  };
+
+  if (!src) {
+    return (
+      <div className={clsx(
+        'w-12 h-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center text-xs font-bold text-[var(--text-muted)]',
+        sizes[size],
+        className
+      )}>
+        {name.substring(0, 2).toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={name}
+      className={clsx(
+        'rounded-full object-contain transition-all duration-300 hover:scale-110 hover:rotate-6 hover:drop-shadow-[0_0_10px_rgba(34,197,94,0.5)]',
+        sizes[size],
+        className
+      )}
+    />
+  );
+}
+
+interface GlowBorderProps {
+  children: React.ReactNode;
+  color?: 'green' | 'blue' | 'yellow' | 'purple';
+  intensity?: 'low' | 'medium' | 'high';
+  className?: string;
+}
+
+export function GlowBorder({ children, color = 'green', intensity = 'medium', className }: GlowBorderProps) {
+  const colors = {
+    green: 'border-[var(--accent-green)] shadow-[0_0_20px_rgba(34,197,94,0.3)]',
+    blue: 'border-[var(--accent-blue)] shadow-[0_0_20px_rgba(59,130,246,0.3)]',
+    yellow: 'border-[var(--accent-yellow)] shadow-[0_0_20px_rgba(234,179,8,0.3)]',
+    purple: 'border-[var(--accent-purple)] shadow-[0_0_20px_rgba(168,85,247,0.3)]',
+  };
+
+  const intensities = {
+    low: 'hover:shadow-[0_0_15px_rgba(34,197,94,0.2)]',
+    medium: 'hover:shadow-[0_0_25px_rgba(34,197,94,0.4)]',
+    high: 'hover:shadow-[0_0_35px_rgba(34,197,94,0.6)]',
+  };
+
+  return (
+    <div className={clsx(
+      'border-2 border-[var(--border-color)] rounded-lg transition-all duration-300',
+      colors[color],
+      intensities[intensity],
+      className
+    )}>
+      {children}
+    </div>
+  );
+}
+
+interface SkeletonProps {
+  className?: string;
+}
+
+export function Skeleton({ className }: SkeletonProps) {
+  return (
+    <div className={clsx(
+      'bg-gradient-to-r from-[var(--bg-tertiary)] via-[var(--bg-secondary)] to-[var(--bg-tertiary)] bg-[length:200%_100%] animate-shimmer rounded',
+      className
+    )} />
   );
 }
