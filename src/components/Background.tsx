@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+export { GuardianBadge } from '@/components/ui';
 
 interface BackgroundImage {
   home: string;
