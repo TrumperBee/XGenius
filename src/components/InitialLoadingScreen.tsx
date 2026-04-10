@@ -125,17 +125,31 @@ function LightRays() {
   );
 }
 
+interface Particle {
+  id: number;
+  left: number;
+  delay: number;
+  duration: number;
+  size: number;
+  opacity: number;
+}
+
 function Particles({ count = 30 }: { count?: number }) {
-  const particles = React.useMemo(() => 
-    [...Array(count)].map((_, i) => ({
+  const [particles, setParticles] = React.useState<Particle[]>([]);
+
+  React.useEffect(() => {
+    const generated: Particle[] = [...Array(count)].map((_, i) => ({
       id: i,
       left: Math.random() * 100,
       delay: Math.random() * 5,
       duration: 3 + Math.random() * 4,
       size: 2 + Math.random() * 4,
       opacity: 0.3 + Math.random() * 0.5,
-    })), [count]
-  );
+    }));
+    setParticles(generated);
+  }, [count]);
+
+  if (particles.length === 0) return null;
 
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -241,24 +255,27 @@ function MobileLoader() {
 }
 
 function StadiumBackground() {
-  const [bgIndex, setBgIndex] = useState(0);
+  const [bgIndex, setBgIndex] = useState<number | null>(null);
 
   useEffect(() => {
+    setBgIndex(0);
     const interval = setInterval(() => {
-      setBgIndex((prev) => (prev + 1) % STADIUM_BACKGROUNDS.length);
+      setBgIndex((prev) => ((prev ?? 0) + 1) % STADIUM_BACKGROUNDS.length);
     }, 10000);
     return () => clearInterval(interval);
   }, []);
 
   return (
     <>
-      <div 
-        className="absolute inset-0 bg-cover bg-center transition-opacity duration-2000"
-        style={{ 
-          backgroundImage: `url('${STADIUM_BACKGROUNDS[bgIndex]}')`,
-          opacity: 0.3,
-        }}
-      />
+      {bgIndex !== null && (
+        <div 
+          className="absolute inset-0 bg-cover bg-center transition-opacity duration-2000"
+          style={{ 
+            backgroundImage: `url('${STADIUM_BACKGROUNDS[bgIndex]}')`,
+            opacity: 0.3,
+          }}
+        />
+      )}
       <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/70 to-black/90" />
     </>
   );
@@ -269,10 +286,10 @@ export function InitialLoadingScreen() {
   const [isVisible, setIsVisible] = useState(true);
   const [isFading, setIsFading] = useState(false);
   const [minTimePassed, setMinTimePassed] = useState(false);
-  
-  const mobile = typeof window !== 'undefined' && isMobile();
+  const [mobile, setMobile] = useState(false);
 
   useEffect(() => {
+    setMobile(isMobile());
     const timer = setTimeout(() => setMinTimePassed(true), 2000);
     return () => clearTimeout(timer);
   }, []);
@@ -292,7 +309,7 @@ export function InitialLoadingScreen() {
       <div className="absolute inset-0 bg-gradient-to-br from-black via-gray-900 to-black">
         {!mobile && <StadiumBackground />}
         {!mobile && <LightRays />}
-        {!mobile && <Particles count={mobile ? 0 : 30} />}
+        {!mobile && <Particles count={30} />}
       </div>
 
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4">
