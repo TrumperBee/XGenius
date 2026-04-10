@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, signInWithEmail, signUpWithEmail, signInWithGoogle, getCurrentUser, signOut } from '@/lib/auth';
+import { supabase, signInWithEmail, signUpWithEmail, signInWithGoogle, getCurrentUser, signOut, ensureProfileExists } from '@/lib/auth';
 import { User } from '@/lib/auth';
 import { Loader2, X, Mail, Lock, Eye, EyeOff, Check, AlertCircle, ArrowRight, ArrowLeft, UserPlus, LogIn, Sparkles, TrendingUp, Trophy, Bell, Zap, LogOut } from 'lucide-react';
 import { mockTeams } from '@/data/mockData';
@@ -191,6 +191,9 @@ function SignUpForm({ onSuccess, onSwitchToSignIn, onLoadingChange, onStatusChan
       
       setTimeout(async () => {
         const user = await getCurrentUser();
+        if (user) {
+          await ensureProfileExists(user.id, user.email);
+        }
         if (user && onSuccess) {
           onSuccess(user);
         }

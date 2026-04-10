@@ -80,30 +80,52 @@ export async function getCurrentUser(): Promise<User | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   
-  let fullName = user.email?.split('@')[0] || 'User';
-  let avatarUrl: string | undefined;
+  let fullName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
+  let avatarUrl: string | undefined = user.user_metadata?.avatar_url;
   
   try {
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
     
-    if (profile) {
+    if (profile && !error) {
       fullName = profile.full_name || fullName;
-      avatarUrl = profile.avatar_url;
+      avatarUrl = profile.avatar_url || avatarUrl;
+    } else if (error) {
+      console.warn('Profile query failed:', error.message);
     }
   } catch (e) {
-    // profiles table might not exist yet
+    console.warn('Profile fetch error:', e);
   }
   
   return {
     id: user.id,
     email: user.email || '',
     full_name: fullName,
-    avatar_url: avatarUrl || user.user_metadata?.avatar_url
+    avatar_url: avatarUrl
   };
+}
+
+export async function ensureProfileExists(userId: string, email: string, fullName?: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: userId,
+        email,
+        full_name: fullName,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    
+    if (error) {
+      console.warn('Failed to create profile:', error.message);
+    }
+  } catch (e) {
+    console.warn('Profile creation error:', e);
+  }
 }
 
 export function onAuthStateChange(callback: (user: User | null) => void) {
