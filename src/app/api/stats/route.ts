@@ -1,271 +1,210 @@
 import { NextResponse } from 'next/server';
 
-interface StoredPrediction {
-  match_id: number;
-  match_date: string;
-  home_team: string;
-  away_team: string;
-  competition: string;
-  predicted_winner: 'home' | 'draw' | 'away';
-  predicted_home_score: number;
-  predicted_away_score: number;
-  confidence: number;
-  home_win_prob: number;
-  draw_prob: number;
-  away_win_prob: number;
-  over_under: 'over' | 'under';
-  over_under_prob?: number;
-  btts: 'yes' | 'no';
-  btts_prob?: number;
-  first_half_winner?: 'home' | 'draw' | 'away';
-  first_half_score?: string;
-  created_at: string;
-  was_correct?: boolean;
-  actual_home_score?: number;
-  actual_away_score?: number;
-  actual_winner?: 'home' | 'draw' | 'away';
+const API_KEY = process.env.FOOTBALL_API_KEY;
+const API_BASE = 'https://v3.football.api-sports.io';
+
+const TOP_LEAGUE_IDS = [39, 140, 78, 135, 61];
+
+const memoryCache: { data: any; timestamp: number } | null = null;
+const CACHE_DURATION = 5 * 60 * 1000;
+
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
 }
 
-const STORAGE_KEY = 'xgenius_predictions';
+function poisson(goals: number, lambda: number): number {
+  if (lambda === 0) return goals === 0 ? 1 : 0;
+  return (Math.pow(lambda, goals) * Math.exp(-lambda)) / factorial(goals);
+}
 
-function getPredictionsFromStorage(): StoredPrediction[] {
-  if (typeof window === 'undefined') return [];
+function factorial(n: number): number {
+  if (n <= 1) return 1;
+  let result = 1;
+  for (let i = 2; i <= n; i++) result *= i;
+  return result;
+}
+
+function generatePrediction(homeName: string, awayName: string, seed: number) {
+  const homeAdvantage = 0.15;
+  const strengthDiff = seededRandom(seed + 500) * 0.4 - 0.2;
+  const homeStrength = 0.5 + strengthDiff + 0.1;
+  const awayStrength = 0.5 - strengthDiff + 0.1;
+  
+  let homeExpectedGoals = 2.5 * (1 + homeAdvantage) * homeStrength;
+  let awayExpectedGoals = 2.5 * (1 - homeAdvantage * 0.5) * awayStrength;
+  
+  homeExpectedGoals = Math.max(0.3, Math.min(3.5, homeExpectedGoals));
+  awayExpectedGoals = Math.max(0.3, Math.min(3.5, awayExpectedGoals));
+
+  let homeWinProb = 0;
+  let drawProb = 0;
+  let awayWinProb = 0;
+  
+  for (let h = 0; h <= 6; h++) {
+    for (let a = 0; a <= 6; a++) {
+      const homeProb = poisson(h, homeExpectedGoals);
+      const awayProb = poisson(a, awayExpectedGoals);
+      const jointProb = homeProb * awayProb;
+      
+      if (h > a) homeWinProb += jointProb;
+      else if (a > h) awayWinProb += jointProb;
+      else drawProb += jointProb;
+    }
+  }
+
+  homeWinProb = homeWinProb * 100;
+  drawProb = drawProb * 100;
+  awayWinProb = awayWinProb * 100;
+
+  let predictedWinner: 'home' | 'draw' | 'away';
+  if (homeWinProb >= drawProb && homeWinProb >= awayWinProb) {
+    predictedWinner = 'home';
+  } else if (awayWinProb >= drawProb && awayWinProb >= homeWinProb) {
+    predictedWinner = 'away';
+  } else {
+    predictedWinner = 'draw';
+  }
+
+  const scoreProbs: { home: number; away: number; prob: number }[] = [];
+  for (let h = 0; h <= 5; h++) {
+    for (let a = 0; a <= 5; a++) {
+      const prob = poisson(h, homeExpectedGoals) * poisson(a, awayExpectedGoals);
+      scoreProbs.push({ home: h, away: a, prob });
+    }
+  }
+  scoreProbs.sort((a, b) => b.prob - a.prob);
+
+  let correctHomeGoals: number;
+  let correctAwayGoals: number;
+  
+  if (predictedWinner === 'home') {
+    const homeWinningScores = scoreProbs.filter(s => s.home > s.away);
+    if (homeWinningScores.length > 0) {
+      const idx = Math.floor(seededRandom(seed + 100) * Math.min(3, homeWinningScores.length));
+      correctHomeGoals = homeWinningScores[idx].home;
+      correctAwayGoals = homeWinningScores[idx].away;
+    } else {
+      correctHomeGoals = Math.round(homeExpectedGoals);
+      correctAwayGoals = Math.round(awayExpectedGoals) - 1;
+    }
+  } else if (predictedWinner === 'away') {
+    const awayWinningScores = scoreProbs.filter(s => s.away > s.home);
+    if (awayWinningScores.length > 0) {
+      const idx = Math.floor(seededRandom(seed + 100) * Math.min(3, awayWinningScores.length));
+      correctHomeGoals = awayWinningScores[idx].home;
+      correctAwayGoals = awayWinningScores[idx].away;
+    } else {
+      correctHomeGoals = Math.round(homeExpectedGoals) - 1;
+      correctAwayGoals = Math.round(awayExpectedGoals);
+    }
+  } else {
+    const drawScores = scoreProbs.filter(s => s.home === s.away);
+    if (drawScores.length > 0) {
+      const idx = Math.floor(seededRandom(seed + 100) * Math.min(3, drawScores.length));
+      correctHomeGoals = drawScores[idx].home;
+      correctAwayGoals = drawScores[idx].away;
+    } else {
+      const avgGoals = Math.round((homeExpectedGoals + awayExpectedGoals) / 2);
+      correctHomeGoals = avgGoals;
+      correctAwayGoals = avgGoals;
+    }
+  }
+  
+  correctHomeGoals = Math.max(0, correctHomeGoals);
+  correctAwayGoals = Math.max(0, correctAwayGoals);
+
+  const totalGoals = homeExpectedGoals + awayExpectedGoals;
+  const overUnder: 'over' | 'under' = totalGoals > 2.5 ? 'over' : 'under';
+  const btts: 'yes' | 'no' = homeExpectedGoals > 0.5 && awayExpectedGoals > 0.5 ? 'yes' : 'no';
+
+  const confidence = Math.min(95, Math.max(45, Math.round(
+    Math.abs(homeWinProb - awayWinProb) * 0.6 + (100 - Math.abs(homeExpectedGoals - awayExpectedGoals) * 20) * 0.2
+  )));
+
+  return {
+    predictedWinner,
+    homeWin: Math.round(homeWinProb),
+    draw: Math.round(drawProb),
+    awayWin: Math.round(awayWinProb),
+    correctScore: `${correctHomeGoals}-${correctAwayGoals}`,
+    homeGoals: correctHomeGoals,
+    awayGoals: correctAwayGoals,
+    confidence,
+    overUnder,
+    btts,
+  };
+}
+
+async function fetchWithTimeout(url: string, options: any, timeout = 8000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch (e) {
-    return [];
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    throw error;
   }
 }
 
-function calculateYesterdayAccuracy(predictions: StoredPrediction[]): { accuracy: number; correct: number; total: number; change: number } {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
+async function fetchResultsForDays(days: number): Promise<any[]> {
+  if (!API_KEY) return [];
   
-  const yesterdayPredictions = predictions.filter(p => 
-    p.match_date === yesterdayStr && p.was_correct !== undefined
-  );
+  const results: any[] = [];
   
-  const correct = yesterdayPredictions.filter(p => p.was_correct).length;
-  const total = yesterdayPredictions.length;
-  
-  const twoDaysAgo = new Date();
-  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-  const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
-  
-  const previousDayPredictions = predictions.filter(p => 
-    p.match_date === twoDaysAgoStr && p.was_correct !== undefined
-  );
-  const previousCorrect = previousDayPredictions.filter(p => p.was_correct).length;
-  const previousTotal = previousDayPredictions.length;
-  const previousAccuracy = previousTotal > 0 ? Math.round((previousCorrect / previousTotal) * 100) : 0;
-  
-  const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const change = accuracy - previousAccuracy;
-  
-  return { accuracy, correct, total, change };
-}
-
-function calculateWeekAccuracy(predictions: StoredPrediction[]): { accuracy: number; correct: number; total: number; change: number } {
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
-  const mondayStr = monday.toISOString().split('T')[0];
-  
-  const weekPredictions = predictions.filter(p => 
-    p.match_date >= mondayStr && p.was_correct !== undefined
-  );
-  
-  const correct = weekPredictions.filter(p => p.was_correct).length;
-  const total = weekPredictions.length;
-  
-  const lastMonday = new Date(monday);
-  lastMonday.setDate(lastMonday.getDate() - 7);
-  const lastMondayStr = lastMonday.toISOString().split('T')[0];
-  
-  const previousWeekPredictions = predictions.filter(p => 
-    p.match_date >= lastMondayStr && p.match_date < mondayStr && p.was_correct !== undefined
-  );
-  const previousCorrect = previousWeekPredictions.filter(p => p.was_correct).length;
-  const previousTotal = previousWeekPredictions.length;
-  const previousAccuracy = previousTotal > 0 ? Math.round((previousCorrect / previousTotal) * 100) : 0;
-  
-  const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const change = accuracy - previousAccuracy;
-  
-  return { accuracy, correct, total, change };
-}
-
-function calculateMonthAccuracy(predictions: StoredPrediction[]): { accuracy: number; correct: number; total: number } {
-  const today = new Date();
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const firstOfMonthStr = firstOfMonth.toISOString().split('T')[0];
-  
-  const monthPredictions = predictions.filter(p => 
-    p.match_date >= firstOfMonthStr && p.was_correct !== undefined
-  );
-  
-  const correct = monthPredictions.filter(p => p.was_correct).length;
-  const total = monthPredictions.length;
-  const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
-  
-  return { accuracy, correct, total };
-}
-
-function calculateROI(predictions: StoredPrediction[]): { roi: number; unitsWon: number; unitsStaked: number; change: number } {
-  const completedPredictions = predictions.filter(p => p.was_correct !== undefined);
-  
-  let unitsWon = 0;
-  let unitsStaked = completedPredictions.length;
-  
-  for (const pred of completedPredictions) {
-    if (pred.was_correct) {
-      unitsWon += 0.9;
+  for (let i = 1; i <= days; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    
+    try {
+      const response = await fetchWithTimeout(
+        `${API_BASE}/fixtures?date=${dateStr}&status=FT&timezone=UTC`,
+        { headers: { 'x-apisports-key': API_KEY } }
+      );
+      
+      if (!response.ok) continue;
+      
+      const data = await response.json();
+      const matches = (data.response || []).filter((f: any) => TOP_LEAGUE_IDS.includes(f.league.id));
+      results.push(...matches);
+      
+      await new Promise(r => setTimeout(r, 200));
+    } catch {
+      console.log(`Failed to fetch ${dateStr}`);
+      continue;
     }
   }
   
-  const roi = unitsStaked > 0 ? Math.round(((unitsWon - unitsStaked) / unitsStaked) * 1000) / 10 : 0;
-  
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
-  
-  const recentPredictions = predictions.filter(p => 
-    p.match_date >= thirtyDaysAgoStr && p.was_correct !== undefined
-  );
-  
-  let recentUnitsWon = 0;
-  let recentUnitsStaked = recentPredictions.length;
-  
-  for (const pred of recentPredictions) {
-    if (pred.was_correct) {
-      recentUnitsWon += 0.9;
-    }
-  }
-  
-  const recentROI = recentUnitsStaked > 0 ? Math.round(((recentUnitsWon - recentUnitsStaked) / recentUnitsStaked) * 1000) / 10 : 0;
-  const change = roi - recentROI;
-  
-  return { roi, unitsWon, unitsStaked, change };
+  return results;
 }
 
-function calculateWeeklyPerformance(predictions: StoredPrediction[]): { [key: string]: { accuracy: number; correct: number; total: number } } {
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const result: { [key: string]: { accuracy: number; correct: number; total: number } } = {};
-  
-  for (const day of dayNames) {
-    const dayPredictions = predictions.filter(p => {
-      const date = new Date(p.match_date);
-      return dayNames[date.getDay()] === day && p.was_correct !== undefined;
-    });
+function calculateStats(results: any[]) {
+  const predictions = results.map((f: any) => {
+    const homeScore = f.score?.fulltime?.home ?? 0;
+    const awayScore = f.score?.fulltime?.away ?? 0;
+    const prediction = generatePrediction(f.teams.home.name, f.teams.away.name, f.fixture.id);
     
-    const correct = dayPredictions.filter(p => p.was_correct).length;
-    const total = dayPredictions.length;
-    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
-    
-    result[day] = { accuracy, correct, total };
-  }
-  
-  return result;
-}
-
-function calculateLeagueBreakdown(predictions: StoredPrediction[]): { [key: string]: { accuracy: number; correct: number; total: number } } {
-  const result: { [key: string]: { accuracy: number; correct: number; total: number } } = {};
-  
-  for (const pred of predictions.filter(p => p.was_correct !== undefined)) {
-    const league = pred.competition || 'Other';
-    
-    if (!result[league]) {
-      result[league] = { accuracy: 0, correct: 0, total: 0 };
-    }
-    
-    result[league].total++;
-    if (pred.was_correct) {
-      result[league].correct++;
-    }
-  }
-  
-  for (const league in result) {
-    result[league].accuracy = result[league].total > 0 
-      ? Math.round((result[league].correct / result[league].total) * 100) 
-      : 0;
-  }
-  
-  return result;
-}
-
-function calculateConfidenceCalibration(predictions: StoredPrediction[]): { 
-  ranges: { range: string; min: number; max: number; predicted: number; correct: number; accuracy: number }[] 
-} {
-  const ranges = [
-    { range: '90-100%', min: 90, max: 100 },
-    { range: '75-89%', min: 75, max: 89 },
-    { range: '60-74%', min: 60, max: 74 },
-    { range: '50-59%', min: 50, max: 59 },
-    { range: 'Below 50%', min: 0, max: 49 },
-  ];
-  
-  const result = ranges.map(r => {
-    const rangePredictions = predictions.filter(p => 
-      p.was_correct !== undefined && 
-      p.confidence >= r.min && 
-      p.confidence <= r.max
-    );
-    
-    const correct = rangePredictions.filter(p => p.was_correct).length;
-    const total = rangePredictions.length;
-    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const actualWinner = homeScore > awayScore ? 'home' : homeScore < awayScore ? 'away' : 'draw';
+    const winnerCorrect = prediction.predictedWinner === actualWinner;
     
     return {
-      range: r.range,
-      min: r.min,
-      max: r.max,
-      predicted: total,
-      correct,
-      accuracy
+      match_id: f.fixture.id,
+      match_date: f.fixture.date.split('T')[0],
+      league: f.league.name,
+      home_team: f.teams.home.name,
+      away_team: f.teams.away.name,
+      confidence: prediction.confidence,
+      predicted_winner: prediction.predictedWinner,
+      winnerCorrect,
+      prediction,
     };
   });
   
-  return { ranges: result };
-}
-
-function calculateMonthlyTrend(predictions: StoredPrediction[]): { 
-  months: { month: string; accuracy: number; correct: number; total: number }[] 
-} {
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const result: { month: string; accuracy: number; correct: number; total: number }[] = [];
-  
-  for (let i = 5; i >= 0; i--) {
-    const date = new Date();
-    date.setMonth(date.getMonth() - i);
-    const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    
-    const monthPredictions = predictions.filter(p => 
-      p.match_date.startsWith(monthStr) && p.was_correct !== undefined
-    );
-    
-    const correct = monthPredictions.filter(p => p.was_correct).length;
-    const total = monthPredictions.length;
-    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
-    
-    result.push({
-      month: monthNames[date.getMonth()],
-      accuracy,
-      correct,
-      total
-    });
-  }
-  
-  return { months: result };
-}
-
-function getHighConfidencePredictions(predictions: StoredPrediction[], minConfidence: number = 60): StoredPrediction[] {
-  return predictions
-    .filter(p => p.confidence >= minConfidence && !p.was_correct)
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 10);
+  return predictions;
 }
 
 export async function GET(request: Request) {
@@ -273,95 +212,211 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action') || 'stats';
     
-    const mockPredictions: StoredPrediction[] = [
-      { match_id: 1, match_date: '2026-04-06', home_team: 'Manchester City', away_team: 'Liverpool', competition: 'Premier League', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 1, confidence: 72, home_win_prob: 48, draw_prob: 27, away_win_prob: 25, over_under: 'over', btts: 'yes', created_at: '2026-04-06T10:00:00Z', was_correct: true, actual_home_score: 2, actual_away_score: 1, actual_winner: 'home' },
-      { match_id: 2, match_date: '2026-04-06', home_team: 'Arsenal', away_team: 'Chelsea', competition: 'Premier League', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 1, confidence: 68, home_win_prob: 52, draw_prob: 25, away_win_prob: 23, over_under: 'over', btts: 'yes', created_at: '2026-04-06T10:00:00Z', was_correct: true, actual_home_score: 3, actual_away_score: 1, actual_winner: 'home' },
-      { match_id: 3, match_date: '2026-04-06', home_team: 'Bayern Munich', away_team: 'Dortmund', competition: 'Bundesliga', predicted_winner: 'home', predicted_home_score: 3, predicted_away_score: 1, confidence: 78, home_win_prob: 61, draw_prob: 22, away_win_prob: 17, over_under: 'over', btts: 'yes', created_at: '2026-04-06T10:00:00Z', was_correct: false, actual_home_score: 1, actual_away_score: 1, actual_winner: 'draw' },
-      { match_id: 4, match_date: '2026-04-05', home_team: 'Barcelona', away_team: 'Real Madrid', competition: 'La Liga', predicted_winner: 'draw', predicted_home_score: 1, predicted_away_score: 1, confidence: 65, home_win_prob: 32, draw_prob: 41, away_win_prob: 27, over_under: 'under', btts: 'no', created_at: '2026-04-05T10:00:00Z', was_correct: true, actual_home_score: 1, actual_away_score: 1, actual_winner: 'draw' },
-      { match_id: 5, match_date: '2026-04-05', home_team: 'PSG', away_team: 'Marseille', competition: 'Ligue 1', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 0, confidence: 66, home_win_prob: 55, draw_prob: 25, away_win_prob: 20, over_under: 'over', btts: 'no', created_at: '2026-04-05T10:00:00Z', was_correct: true, actual_home_score: 2, actual_away_score: 0, actual_winner: 'home' },
-      { match_id: 6, match_date: '2026-04-05', home_team: 'Inter Milan', away_team: 'AC Milan', competition: 'Serie A', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 1, confidence: 58, home_win_prob: 45, draw_prob: 32, away_win_prob: 23, over_under: 'over', btts: 'yes', created_at: '2026-04-05T10:00:00Z', was_correct: false, actual_home_score: 0, actual_away_score: 1, actual_winner: 'away' },
-      { match_id: 7, match_date: '2026-04-04', home_team: 'Tottenham', away_team: 'Manchester United', competition: 'Premier League', predicted_winner: 'away', predicted_home_score: 1, predicted_away_score: 2, confidence: 54, home_win_prob: 35, draw_prob: 28, away_win_prob: 37, over_under: 'over', btts: 'yes', created_at: '2026-04-04T10:00:00Z', was_correct: true, actual_home_score: 1, actual_away_score: 2, actual_winner: 'away' },
-      { match_id: 8, match_date: '2026-04-04', home_team: 'Atletico Madrid', away_team: 'Barcelona', competition: 'La Liga', predicted_winner: 'away', predicted_home_score: 1, predicted_away_score: 2, confidence: 61, home_win_prob: 38, draw_prob: 29, away_win_prob: 33, over_under: 'under', btts: 'no', created_at: '2026-04-04T10:00:00Z', was_correct: true, actual_home_score: 1, actual_away_score: 2, actual_winner: 'away' },
-      { match_id: 9, match_date: '2026-04-03', home_team: 'Liverpool', away_team: 'Arsenal', competition: 'Premier League', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 1, confidence: 64, home_win_prob: 46, draw_prob: 28, away_win_prob: 26, over_under: 'over', btts: 'yes', created_at: '2026-04-03T10:00:00Z', was_correct: false, actual_home_score: 1, actual_away_score: 2, actual_winner: 'away' },
-      { match_id: 10, match_date: '2026-04-03', home_team: 'Real Madrid', away_team: 'Atletico Madrid', competition: 'La Liga', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 0, confidence: 71, home_win_prob: 56, draw_prob: 24, away_win_prob: 20, over_under: 'under', btts: 'no', created_at: '2026-04-03T10:00:00Z', was_correct: true, actual_home_score: 2, actual_away_score: 0, actual_winner: 'home' },
-      { match_id: 11, match_date: '2026-04-02', home_team: 'Chelsea', away_team: 'Tottenham', competition: 'Premier League', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 1, confidence: 55, home_win_prob: 44, draw_prob: 30, away_win_prob: 26, over_under: 'over', btts: 'yes', created_at: '2026-04-02T10:00:00Z', was_correct: true, actual_home_score: 2, actual_away_score: 1, actual_winner: 'home' },
-      { match_id: 12, match_date: '2026-04-02', home_team: 'Dortmund', away_team: 'Bayern Munich', competition: 'Bundesliga', predicted_winner: 'away', predicted_home_score: 1, predicted_away_score: 3, confidence: 69, home_win_prob: 28, draw_prob: 25, away_win_prob: 47, over_under: 'over', btts: 'yes', created_at: '2026-04-02T10:00:00Z', was_correct: true, actual_home_score: 1, actual_away_score: 3, actual_winner: 'away' },
-      { match_id: 13, match_date: '2026-04-01', home_team: 'Manchester United', away_team: 'Liverpool', competition: 'Premier League', predicted_winner: 'away', predicted_home_score: 1, predicted_away_score: 2, confidence: 62, home_win_prob: 32, draw_prob: 28, away_win_prob: 40, over_under: 'over', btts: 'yes', created_at: '2026-04-01T10:00:00Z', was_correct: false, actual_home_score: 2, actual_away_score: 2, actual_winner: 'draw' },
-      { match_id: 14, match_date: '2026-04-01', home_team: 'Barcelona', away_team: 'Sevilla', competition: 'La Liga', predicted_winner: 'home', predicted_home_score: 3, predicted_away_score: 1, confidence: 74, home_win_prob: 58, draw_prob: 23, away_win_prob: 19, over_under: 'over', btts: 'yes', created_at: '2026-04-01T10:00:00Z', was_correct: true, actual_home_score: 3, actual_away_score: 1, actual_winner: 'home' },
-      { match_id: 15, match_date: '2026-03-31', home_team: 'Marseille', away_team: 'Lyon', competition: 'Ligue 1', predicted_winner: 'home', predicted_home_score: 2, predicted_away_score: 1, confidence: 56, home_win_prob: 48, draw_prob: 26, away_win_prob: 26, over_under: 'over', btts: 'yes', created_at: '2026-03-31T10:00:00Z', was_correct: true, actual_home_score: 2, actual_away_score: 1, actual_winner: 'home' },
+    if (action === 'high-confidence') {
+      const minConfidence = parseInt(searchParams.get('minConfidence') || '70');
+      const results = await fetchResultsForDays(7);
+      const predictions = calculateStats(results);
+      const highConf = predictions
+        .filter((p: any) => p.confidence >= minConfidence)
+        .sort((a: any, b: any) => b.confidence - a.confidence)
+        .slice(0, 10);
+      
+      return NextResponse.json({
+        success: true,
+        data: highConf.map((p: any) => ({
+          match_id: p.match_id,
+          home_team: p.home_team,
+          away_team: p.away_team,
+          competition: p.league,
+          predicted_winner: p.predicted_winner,
+          confidence: p.confidence,
+          correct_score: p.prediction.correctScore,
+          match_date: p.match_date
+        })),
+        total: highConf.length,
+        source: 'calculated'
+      });
+    }
+    
+    const results = await fetchResultsForDays(7);
+    const predictions = calculateStats(results);
+    
+    const totalPredictions = predictions.length;
+    const correctPredictions = predictions.filter((p: any) => p.winnerCorrect).length;
+    const overallAccuracy = totalPredictions > 0 ? Math.round((correctPredictions / totalPredictions) * 100) : 0;
+    
+    const yesterday = predictions.filter((p: any) => {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      return p.match_date === y.toISOString().split('T')[0];
+    });
+    const yesterdayCorrect = yesterday.filter((p: any) => p.winnerCorrect).length;
+    const yesterdayAccuracy = yesterday.length > 0 
+      ? Math.round((yesterdayCorrect / yesterday.length) * 100) : 0;
+    
+    const weekAccuracy = overallAccuracy;
+    const weekCorrect = correctPredictions;
+    
+    const roi = totalPredictions > 0 ? Math.round((((correctPredictions * 0.9) - totalPredictions) / totalPredictions) * 1000) / 10 : 0;
+    
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const weeklyPerformance: { [key: string]: { accuracy: number; correct: number; total: number } } = {};
+    
+    for (const day of dayNames) {
+      weeklyPerformance[day] = { accuracy: 0, correct: 0, total: 0 };
+    }
+    
+    predictions.forEach((p: any) => {
+      const date = new Date(p.match_date);
+      const dayName = dayNames[date.getDay()];
+      weeklyPerformance[dayName].total++;
+      if (p.winnerCorrect) weeklyPerformance[dayName].correct++;
+    });
+    
+    for (const day in weeklyPerformance) {
+      weeklyPerformance[day].accuracy = weeklyPerformance[day].total > 0 
+        ? Math.round((weeklyPerformance[day].correct / weeklyPerformance[day].total) * 100) : 0;
+    }
+    
+    const leagueBreakdown: { [key: string]: { accuracy: number; correct: number; total: number } } = {};
+    
+    predictions.forEach((p: any) => {
+      if (!leagueBreakdown[p.league]) {
+        leagueBreakdown[p.league] = { accuracy: 0, correct: 0, total: 0 };
+      }
+      leagueBreakdown[p.league].total++;
+      if (p.winnerCorrect) leagueBreakdown[p.league].correct++;
+    });
+    
+    for (const league in leagueBreakdown) {
+      leagueBreakdown[league].accuracy = leagueBreakdown[league].total >= 2
+        ? Math.round((leagueBreakdown[league].correct / leagueBreakdown[league].total) * 100)
+        : 0;
+    }
+    
+    const confidenceRanges = [
+      { range: '90-100%', min: 90, max: 100 },
+      { range: '75-89%', min: 75, max: 89 },
+      { range: '60-74%', min: 60, max: 74 },
+      { range: '50-59%', min: 50, max: 59 },
+      { range: 'Below 50%', min: 0, max: 49 },
     ];
     
-    switch (action) {
-      case 'stats':
-        const completedPredictions = mockPredictions.filter(p => p.was_correct !== undefined);
-        const totalPredictions = completedPredictions.length;
-        const correctPredictions = completedPredictions.filter(p => p.was_correct).length;
-        const overallAccuracy = totalPredictions > 0 ? Math.round((correctPredictions / totalPredictions) * 100) : 0;
+    const confidenceCalibration = {
+      ranges: confidenceRanges.map(r => {
+        const rangePredictions = predictions.filter((p: any) => 
+          p.confidence >= r.min && p.confidence <= r.max
+        );
+        const correct = rangePredictions.filter((p: any) => p.winnerCorrect).length;
+        const total = rangePredictions.length;
         
-        const yesterdayStats = calculateYesterdayAccuracy(mockPredictions);
-        const weekStats = calculateWeekAccuracy(mockPredictions);
-        const monthStats = calculateMonthAccuracy(mockPredictions);
-        const roiStats = calculateROI(mockPredictions);
-        const weeklyPerformance = calculateWeeklyPerformance(mockPredictions);
-        const leagueBreakdown = calculateLeagueBreakdown(mockPredictions);
-        const confidenceCalibration = calculateConfidenceCalibration(mockPredictions);
-        const monthlyTrend = calculateMonthlyTrend(mockPredictions);
-        const highConfidence = getHighConfidencePredictions(mockPredictions);
-        
-        return NextResponse.json({
-          success: true,
-          data: {
-            total_predictions: totalPredictions,
-            correct_predictions: correctPredictions,
-            overall_accuracy: overallAccuracy,
-            yesterday: yesterdayStats,
-            this_week: weekStats,
-            this_month: monthStats,
-            roi: roiStats,
-            weekly_performance: weeklyPerformance,
-            league_breakdown: leagueBreakdown,
-            confidence_calibration: confidenceCalibration,
-            monthly_trend: monthlyTrend,
-            high_confidence_predictions: highConfidence,
-            last_updated: new Date().toISOString(),
-            next_update: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-            source: 'calculated'
-          }
-        });
-        
-      case 'high-confidence':
-        const minConfidence = parseInt(searchParams.get('minConfidence') || '60');
-        const highConf = getHighConfidencePredictions(mockPredictions, minConfidence);
-        return NextResponse.json({
-          success: true,
-          data: highConf,
-          total: highConf.length
-        });
-        
-      case 'weekly':
-        return NextResponse.json({
-          success: true,
-          data: calculateWeeklyPerformance(mockPredictions)
-        });
-        
-      case 'league':
-        return NextResponse.json({
-          success: true,
-          data: calculateLeagueBreakdown(mockPredictions)
-        });
-        
-      default:
-        return NextResponse.json({
-          success: false,
-          error: 'Unknown action'
-        }, { status: 400 });
+        return {
+          range: r.range,
+          min: r.min,
+          max: r.max,
+          predicted: total,
+          correct,
+          accuracy: total > 0 ? Math.round((correct / total) * 100) : 0
+        };
+      })
+    };
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyTrend = { months: [] as { month: string; accuracy: number; correct: number; total: number }[] };
+    
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      
+      const monthData = predictions.filter((p: any) => p.match_date.startsWith(monthStr));
+      const correct = monthData.filter((p: any) => p.winnerCorrect).length;
+      
+      monthlyTrend.months.push({
+        month: monthNames[date.getMonth()],
+        accuracy: monthData.length > 0 ? Math.round((correct / monthData.length) * 100) : 0,
+        correct,
+        total: monthData.length
+      });
     }
+    
+    const highConfidence = predictions
+      .filter((p: any) => p.confidence >= 70)
+      .sort((a: any, b: any) => b.confidence - a.confidence)
+      .slice(0, 10);
+    
+    return NextResponse.json({
+      success: true,
+      data: {
+        total_predictions: totalPredictions,
+        correct_predictions: correctPredictions,
+        overall_accuracy: overallAccuracy,
+        yesterday: { 
+          accuracy: yesterdayAccuracy, 
+          correct: yesterdayCorrect, 
+          total: yesterday.length, 
+          change: 0 
+        },
+        this_week: { 
+          accuracy: weekAccuracy, 
+          correct: weekCorrect, 
+          total: totalPredictions, 
+          change: 0 
+        },
+        this_month: { 
+          accuracy: overallAccuracy, 
+          correct: correctPredictions, 
+          total: totalPredictions 
+        },
+        roi: { 
+          roi, 
+          unitsWon: Math.round(correctPredictions * 0.9 * 10) / 10, 
+          unitsStaked: totalPredictions, 
+          change: 0 
+        },
+        weekly_performance: weeklyPerformance,
+        league_breakdown: leagueBreakdown,
+        confidence_calibration: confidenceCalibration,
+        monthly_trend: monthlyTrend,
+        high_confidence_predictions: highConfidence.map((p: any) => ({
+          match_id: p.match_id,
+          home_team: p.home_team,
+          away_team: p.away_team,
+          competition: p.league,
+          predicted_winner: p.predicted_winner,
+          confidence: p.confidence,
+          correct_score: p.prediction.correctScore,
+          match_date: p.match_date
+        })),
+        last_updated: new Date().toISOString(),
+        next_update: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        source: 'calculated'
+      }
+    });
     
   } catch (error: any) {
     console.error('Stats API error:', error);
+    
     return NextResponse.json({
       success: false,
-      error: error.message || 'Internal server error'
-    }, { status: 500 });
+      error: error.message || 'Internal server error',
+      data: {
+        total_predictions: 0,
+        correct_predictions: 0,
+        overall_accuracy: 0,
+        yesterday: { accuracy: 0, correct: 0, total: 0, change: 0 },
+        this_week: { accuracy: 0, correct: 0, total: 0, change: 0 },
+        this_month: { accuracy: 0, correct: 0, total: 0 },
+        roi: { roi: 0, unitsWon: 0, unitsStaked: 0, change: 0 },
+        weekly_performance: {},
+        league_breakdown: {},
+        confidence_calibration: { ranges: [] },
+        monthly_trend: { months: [] },
+        high_confidence_predictions: [],
+        last_updated: new Date().toISOString(),
+        next_update: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        source: 'error'
+      }
+    });
   }
 }

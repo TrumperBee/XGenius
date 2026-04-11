@@ -17,7 +17,7 @@ interface MatchPollProps {
   league: string;
   prediction: {
     predictedWinner: 'home' | 'draw' | 'away';
-    correctScore: string;
+    totalGoals: number;
     confidence: number;
     homeGoals: number;
     awayGoals: number;
@@ -102,7 +102,7 @@ export function MatchPoll({
         home_team: homeTeam,
         away_team: awayTeam,
         predicted_winner: prediction.predictedWinner,
-        predicted_score: prediction.correctScore,
+        predicted_score: `${prediction.homeGoals}-${prediction.awayGoals}`,
         predicted_home_goals: prediction.homeGoals,
         predicted_away_goals: prediction.awayGoals,
         confidence: prediction.confidence,
@@ -177,7 +177,11 @@ export function MatchPoll({
         <div className={styles.predictionCard}>
           <div className={styles.scorePrediction}>
             <span className={prediction.predictedWinner === 'home' ? styles.winner : ''}>{homeShort}</span>
-            <span className={styles.vs}>{prediction.correctScore}</span>
+            <span className={styles.vs}>
+              {prediction.totalGoals ? (
+                <>{Math.max(0, Math.floor(prediction.totalGoals - 0.8)).toFixed(0)}-{Math.ceil(prediction.totalGoals + 0.8).toFixed(0)} Goals</>
+              ) : '--'}
+            </span>
             <span className={prediction.predictedWinner === 'away' ? styles.winner : ''}>{awayShort}</span>
           </div>
           

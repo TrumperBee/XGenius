@@ -4,7 +4,7 @@ import { use, useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, Badge } from '@/components/ui';
 import { NetworkStatusBanner } from '@/components/NetworkStatus';
 import { MatchPoll } from '@/components/MatchPoll';
-import { Loader2, Calendar, Trophy, TrendingUp, Zap, Target, BarChart3, Clock, AlertCircle, RefreshCw, CheckCircle2, XCircle, Info } from 'lucide-react';
+import { Loader2, Calendar, Trophy, TrendingUp, Zap, Target, BarChart3, Clock, AlertCircle, RefreshCw, CheckCircle2, XCircle, Info, HelpCircle, ChevronDown, ChevronUp, History } from 'lucide-react';
 
 interface Fixture {
   id: number;
@@ -38,6 +38,7 @@ interface H2HData {
     goals: { home: number; away: number };
   };
   has_history: boolean;
+  verification?: { verified: boolean; data_quality: string };
 }
 
 interface ConsistentPrediction {
@@ -98,41 +99,73 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
   const [fixture, setFixture] = useState<Fixture | null>(null);
   const [h2hData, setH2hData] = useState<H2HData | null>(null);
   const [h2hLoading, setH2hLoading] = useState(false);
+  const [homeForm, setHomeForm] = useState<{form: string[], summary: any, fixtures: any[]} | null>(null);
+  const [awayForm, setAwayForm] = useState<{form: string[], summary: any, fixtures: any[]} | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
   const [prediction, setPrediction] = useState<ConsistentPrediction | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [showWhy, setShowWhy] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const insights = useMemo(() => {
-    if (!h2hData?.has_history) return [];
-    
     const points: string[] = [];
-    const { summary, fixtures: matches } = h2hData;
     
-    if (summary.home_wins > summary.away_wins) {
-      points.push(`${fixture?.home_team?.name} has historically dominated with ${summary.home_wins} wins`);
-    } else if (summary.away_wins > summary.home_wins) {
-      points.push(`${fixture?.away_team?.name} has the edge historically with ${summary.away_wins} wins`);
-    } else {
-      points.push('Previous encounters have been evenly matched');
+    if (h2hData?.has_history && h2hData.fixtures?.length > 0) {
+      const { summary, fixtures: matches } = h2hData;
+      
+      if (summary.home_wins > summary.away_wins) {
+        points.push(`${fixture?.home_team?.name} leads H2H with ${summary.home_wins} wins`);
+      } else if (summary.away_wins > summary.home_wins) {
+        points.push(`${fixture?.away_team?.name} leads H2H with ${summary.away_wins} wins`);
+      } else {
+        points.push('H2H record is evenly split');
+      }
+      
+      if (summary.goals.home > summary.goals.away) {
+        points.push(`Average ${(summary.goals.home / summary.total).toFixed(1)} goals for ${fixture?.home_team?.name} in this fixture`);
+      }
+      
+      const recentMatches = matches.slice(0, 5);
+      const overs = recentMatches.filter((m: any) => m.home_score + m.away_score > 2.5).length;
+      if (overs >= 3) {
+        points.push(`${overs}/${recentMatches.length} recent H2H matches had 3+ goals`);
+      } else {
+        points.push('Recent H2H meetings tend to be low-scoring');
+      }
     }
     
-    if (summary.goals.home > summary.goals.away) {
-      points.push(`${fixture?.home_team?.name} scores more in this fixture`);
-    } else if (summary.goals.away > summary.goals.home) {
-      points.push(`${fixture?.away_team?.name} scores more in this fixture`);
+    if (prediction) {
+      if (prediction.confidence >= 75) {
+        points.push(`High confidence pick at ${prediction.confidence}%`);
+      } else if (prediction.confidence >= 60) {
+        points.push(`Moderate confidence at ${prediction.confidence}%`);
+      }
+      
+      if (prediction.overUnder === 'over') {
+        points.push(`Statistical models favor Over 2.5 goals (${prediction.overUnderProb}%)`);
+      } else {
+        points.push(`Tight contest expected, Under 2.5 favored (${prediction.overUnderProb}%)`);
+      }
+      
+      if (prediction.btts === 'yes') {
+        points.push(`Both teams expected to score (${prediction.bttsProb}%)`);
+      } else {
+        points.push(`One team likely to keep a clean sheet`);
+      }
+      
+      if (prediction.homeWin > prediction.awayWin && prediction.homeWin > prediction.draw) {
+        points.push(`${fixture?.home_team?.name} favored at ${prediction.homeWin}% win probability`);
+      } else if (prediction.awayWin > prediction.homeWin) {
+        points.push(`${fixture?.away_team?.name} favored at ${prediction.awayWin}% win probability`);
+      } else {
+        points.push(`Draw is the most likely outcome at ${prediction.draw}%`);
+      }
     }
     
-    const recentMatches = matches.slice(0, 5);
-    const overs = recentMatches.filter(m => m.home_score + m.away_score > 2.5).length;
-    if (overs >= 3) {
-      points.push('Recent meetings have been high-scoring');
-    } else {
-      points.push('Recent meetings have been tight contests');
-    }
-    
-    return points;
-  }, [h2hData, fixture]);
+    return points.slice(0, 6);
+  }, [h2hData, fixture, prediction]);
 
   const generateConsistentPrediction = useCallback((
     homeName: string,
@@ -465,7 +498,7 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
     try {
       const today = new Date().toISOString().split('T')[0];
       const response = await fetch(`/api/fixtures?date=${today}&days=7`, {
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(15000)
       });
       const data = await response.json();
       
@@ -475,6 +508,16 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
       if (found) {
         setFixture(found);
         setLastUpdated(new Date().toLocaleString());
+        
+        const defaultSummary = { total: 0, home_wins: 0, away_wins: 0, draws: 0, goals: { home: 0, away: 0 } };
+        const immediatePred = generateConsistentPrediction(
+          found.home_team.name,
+          found.away_team.name,
+          [],
+          defaultSummary,
+          found.id
+        );
+        setPrediction(immediatePred);
       } else {
         setError('Match not found');
       }
@@ -483,7 +526,39 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
       setError('Failed to load match details');
     }
     setLoading(false);
-  }, [matchId]);
+  }, [matchId, generateConsistentPrediction]);
+
+  const fetchTeamForm = useCallback(async () => {
+    if (!fixture) return;
+    
+    setFormLoading(true);
+    try {
+      const [homeRes, awayRes] = await Promise.all([
+        fetch(`/api/team-form?teamId=${fixture.home_team.id}&last=10`),
+        fetch(`/api/team-form?teamId=${fixture.away_team.id}&last=10`)
+      ]);
+      
+      const [homeData, awayData] = await Promise.all([
+        homeRes.json(),
+        awayRes.json()
+      ]);
+      
+      setHomeForm(homeData.success ? { 
+        form: homeData.form || [], 
+        summary: homeData.summary,
+        fixtures: homeData.fixtures || []
+      } : null);
+      
+      setAwayForm(awayData.success ? { 
+        form: awayData.form || [], 
+        summary: awayData.summary,
+        fixtures: awayData.fixtures || []
+      } : null);
+    } catch (e) {
+      console.error('Team form fetch error:', e);
+    }
+    setFormLoading(false);
+  }, [fixture]);
 
   const fetchH2H = useCallback(async () => {
     if (!fixture) return;
@@ -494,16 +569,14 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
       const data = await response.json();
       setH2hData(data);
       
-      if (data.has_history && data.fixtures.length > 0) {
-        const pred = generateConsistentPrediction(
-          fixture.home_team.name,
-          fixture.away_team.name,
-          data.fixtures,
-          data.summary,
-          fixture.id
-        );
-        setPrediction(pred);
-      }
+      const pred = generateConsistentPrediction(
+        fixture.home_team.name,
+        fixture.away_team.name,
+        data.fixtures || [],
+        data.summary || { total: 0, home_wins: 0, away_wins: 0, draws: 0, goals: { home: 0, away: 0 } },
+        fixture.id
+      );
+      setPrediction(pred);
     } catch (e) {
       console.error('H2H fetch error:', e);
       setH2hData({
@@ -533,8 +606,9 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
   useEffect(() => {
     if (fixture) {
       fetchH2H();
+      fetchTeamForm();
     }
-  }, [fixture, fetchH2H]);
+  }, [fixture, fetchH2H, fetchTeamForm]);
 
   if (loading) {
     return (
@@ -640,19 +714,17 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className={`p-3 rounded-lg border ${prediction?.predictedWinner === 'home' ? 'bg-orange-500/20 border-orange-500/30' : 'bg-[var(--bg-tertiary)] border-transparent'}`}>
-                  <div className="text-xs text-[var(--text-muted)] mb-1">Correct Score</div>
-                  <div className="text-2xl font-bold font-mono">{prediction?.correctScore || '--'}</div>
+                <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
+                  <div className="text-xs text-[var(--text-muted)] mb-1">Goal Range</div>
+                  <div className="text-2xl font-bold text-orange-400">
+                    {prediction?.totalGoals ? (
+                      <>
+                        {Math.max(0, Math.floor(prediction.totalGoals - 0.8)).toFixed(0)}-{Math.ceil(prediction.totalGoals + 0.8).toFixed(0)} Goals
+                      </>
+                    ) : '--'}
+                  </div>
                   <div className="text-xs text-[var(--text-muted)] mt-1">
-                    {prediction?.predictedWinner === 'home' && prediction.homeGoals > prediction.awayGoals && (
-                      <span className="text-green-400">{fixture.home_team.short} Win</span>
-                    )}
-                    {prediction?.predictedWinner === 'away' && prediction.awayGoals > prediction.homeGoals && (
-                      <span className="text-red-400">{fixture.away_team.short} Win</span>
-                    )}
-                    {prediction?.predictedWinner === 'draw' && prediction.homeGoals === prediction.awayGoals && (
-                      <span className="text-gray-400">Draw</span>
-                    )}
+                    Expected: ~{prediction?.totalGoals?.toFixed(1) || '--'} goals
                   </div>
                 </div>
                 <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] border-transparent">
@@ -681,37 +753,55 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               </div>
 
-              {prediction?.firstHalfWinner && (
-                <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-[var(--text-muted)] mb-1">First Half Prediction</div>
-                      <div className="font-bold">
-                        {prediction.firstHalfWinner === 'home' && `${fixture.home_team.short} Win`}
-                        {prediction.firstHalfWinner === 'away' && `${fixture.away_team.short} Win`}
-                        {prediction.firstHalfWinner === 'draw' && 'Draw'}
-                        <span className="text-yellow-400 ml-2">({prediction.firstHalfProb}%)</span>
+              {prediction && (
+                <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+                  <button
+                    onClick={() => setShowWhy(!showWhy)}
+                    className="flex items-center justify-between w-full text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <HelpCircle className="w-4 h-4 text-blue-400" />
+                      <span className="text-sm font-medium text-blue-400">Why this prediction?</span>
+                    </div>
+                    {showWhy ? (
+                      <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+                    )}
+                  </button>
+                  
+                  {showWhy && (
+                    <div className="mt-4 space-y-3 animate-in slide-in-from-top-2">
+                      {insights && insights.length > 0 ? (
+                        <ul className="space-y-2">
+                          {insights.map((insight, i) => (
+                            <li key={i} className="text-sm flex items-start gap-2">
+                              <Zap className="w-3 h-3 text-yellow-400 mt-1 flex-shrink-0" />
+                              <span>{insight}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-sm text-[var(--text-muted)]">
+                          <ul className="space-y-1">
+                            <li>• {fixture.home_team.name} home performance metrics</li>
+                            <li>• {fixture.away_team.name} away performance metrics</li>
+                            <li>• Expected goals analysis</li>
+                            <li>• League scoring patterns</li>
+                          </ul>
+                        </div>
+                      )}
+                      
+                      <div className="mt-3 p-3 bg-[var(--bg-tertiary)] rounded-lg">
+                        <p className="text-xs text-[var(--text-muted)]">
+                          <strong>Confidence breakdown:</strong> Our algorithm analyzed multiple factors including 
+                          home advantage ({prediction.homeWin}% for {fixture.home_team.short}), 
+                          recent form, and historical data. The {prediction.confidence}% confidence reflects 
+                          the certainty level based on available data.
+                        </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs text-[var(--text-muted)] mb-1">Half-Time Score</div>
-                      <div className="text-xl font-bold font-mono text-yellow-400">{prediction.firstHalfScore}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {prediction?.insights && prediction.insights.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
-                  <div className="text-xs text-[var(--text-muted)] mb-2">Prediction Logic</div>
-                  <ul className="space-y-1">
-                    {prediction.insights.map((insight, i) => (
-                      <li key={i} className="text-sm flex items-start gap-2">
-                        <Zap className="w-3 h-3 text-yellow-400 mt-1 flex-shrink-0" />
-                        <span>{insight}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  )}
                 </div>
               )}
 
@@ -729,22 +819,80 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
-                Key Insights
+                <History className="w-5 h-5" />
+                Recent Form
+                {formLoading && <Loader2 className="w-4 h-4 animate-spin ml-2" />}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {insights.length > 0 ? (
-                <ul className="space-y-3">
-                  {insights.map((insight, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <Zap className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                      <span>{insight}</span>
-                    </li>
-                  ))}
-                </ul>
+              {formLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                </div>
               ) : (
-                <DataUnavailable message="Insights will appear when H2H data is available" />
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <img src={fixture.home_team.logo} alt={fixture.home_team.name} className="w-6 h-6 object-contain" />
+                        <span className="font-medium">{fixture.home_team.short}</span>
+                      </div>
+                      {homeForm?.summary && (
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {homeForm.summary.wins}W-{homeForm.summary.draws}D-{homeForm.summary.losses}L
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-1">
+                      {homeForm && homeForm.form.length > 0 ? (
+                        homeForm.form.slice(0, 5).map((result, i) => (
+                          <span key={i} className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold ${
+                            result === 'W' ? 'bg-green-500/30 text-green-400' : 
+                            result === 'D' ? 'bg-yellow-500/30 text-yellow-400' : 
+                            'bg-red-500/30 text-red-400'
+                          }`}>
+                            {result}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-[var(--text-muted)] col-span-5">
+                          Loading form data...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <img src={fixture.away_team.logo} alt={fixture.away_team.name} className="w-6 h-6 object-contain" />
+                        <span className="font-medium">{fixture.away_team.short}</span>
+                      </div>
+                      {awayForm?.summary && (
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {awayForm.summary.wins}W-{awayForm.summary.draws}D-{awayForm.summary.losses}L
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-1">
+                      {awayForm && awayForm.form.length > 0 ? (
+                        awayForm.form.slice(0, 5).map((result, i) => (
+                          <span key={i} className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold ${
+                            result === 'W' ? 'bg-green-500/30 text-green-400' : 
+                            result === 'D' ? 'bg-yellow-500/30 text-yellow-400' : 
+                            'bg-red-500/30 text-red-400'
+                          }`}>
+                            {result}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-[var(--text-muted)] col-span-5">
+                          Loading form data...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -763,7 +911,7 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
                 league={fixture.league}
                 prediction={{
                   predictedWinner: prediction.predictedWinner,
-                  correctScore: prediction.correctScore,
+                  totalGoals: prediction.totalGoals,
                   confidence: prediction.confidence,
                   homeGoals: prediction.homeGoals,
                   awayGoals: prediction.awayGoals,
@@ -828,11 +976,13 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               </>
             ) : (
-              <div className="text-center py-8">
-                <Trophy className="w-12 h-12 mx-auto mb-3 opacity-50 text-[var(--text-muted)]" />
-                <p className="font-medium mb-2">No Head-to-Head History Available</p>
-                <p className="text-sm text-[var(--text-muted)]">
-                  These teams may not have met before or data is unavailable.
+              <div className="text-center py-6">
+                <Trophy className="w-10 h-10 mx-auto mb-2 opacity-50 text-[var(--text-muted)]" />
+                <p className="font-medium text-sm mb-1">No H2H Data</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {h2hData?.verification?.data_quality === 'blocked' 
+                    ? 'API unavailable - check team form below'
+                    : 'These teams may not have met recently.'}
                 </p>
               </div>
             )}
@@ -843,51 +993,115 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5" />
-              Team Form Guide
+              Recent Form (All Competitions)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-[var(--text-muted)] mb-4">
-              Detailed statistics require additional API subscriptions. Below is basic information available.
-            </p>
-            
             <div className="grid md:grid-cols-2 gap-6">
               <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <h4 className="font-bold mb-3">{fixture.home_team.name}</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Competition</span>
-                    <span>{fixture.league}</span>
+                <h4 className="font-bold mb-3 flex items-center gap-2">
+                  <img src={fixture.home_team.logo} alt="" className="w-5 h-5" />
+                  {fixture.home_team.name}
+                </h4>
+                {homeForm?.summary ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Record (Last 10)</span>
+                      <span className="font-medium">
+                        <span className="text-green-400">{homeForm.summary.wins}W</span>-{homeForm.summary.draws}D-<span className="text-red-400">{homeForm.summary.losses}L</span>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Goals Scored</span>
+                      <span>{homeForm.summary.goalsFor} ({((homeForm.summary.goalsFor / homeForm.summary.total) || 0).toFixed(1)} avg)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Goals Conceded</span>
+                      <span>{homeForm.summary.goalsAgainst} ({((homeForm.summary.goalsAgainst / homeForm.summary.total) || 0).toFixed(1)} avg)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Clean Sheets</span>
+                      <span>{homeForm.summary.cleanSheets}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Home/Away</span>
-                    <span>Home</span>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Competition</span>
+                      <span>{fixture.league}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Expected Goals</span>
+                      <span>{prediction?.expectedHomeGoals?.toFixed(1) || '--'}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Expected Goals</span>
-                    <span>{prediction?.expectedHomeGoals || '--'}</span>
-                  </div>
-                </div>
+                )}
               </div>
               
               <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <h4 className="font-bold mb-3">{fixture.away_team.name}</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Competition</span>
-                    <span>{fixture.league}</span>
+                <h4 className="font-bold mb-3 flex items-center gap-2">
+                  <img src={fixture.away_team.logo} alt="" className="w-5 h-5" />
+                  {fixture.away_team.name}
+                </h4>
+                {awayForm?.summary ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Record (Last 10)</span>
+                      <span className="font-medium">
+                        <span className="text-green-400">{awayForm.summary.wins}W</span>-{awayForm.summary.draws}D-<span className="text-red-400">{awayForm.summary.losses}L</span>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Goals Scored</span>
+                      <span>{awayForm.summary.goalsFor} ({((awayForm.summary.goalsFor / awayForm.summary.total) || 0).toFixed(1)} avg)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Goals Conceded</span>
+                      <span>{awayForm.summary.goalsAgainst} ({((awayForm.summary.goalsAgainst / awayForm.summary.total) || 0).toFixed(1)} avg)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Clean Sheets</span>
+                      <span>{awayForm.summary.cleanSheets}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Home/Away</span>
-                    <span>Away</span>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Competition</span>
+                      <span>{fixture.league}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Expected Goals</span>
+                      <span>{prediction?.expectedAwayGoals?.toFixed(1) || '--'}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Expected Goals</span>
-                    <span>{prediction?.expectedAwayGoals || '--'}</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
+            
+            {homeForm?.fixtures && homeForm.fixtures.length > 0 && (
+              <div className="mt-6">
+                <h5 className="text-sm font-medium mb-3">{fixture.home_team.short} Recent Matches</h5>
+                <div className="space-y-2">
+                  {homeForm.fixtures.slice(0, 5).map((match: any) => (
+                    <div key={match.id} className="flex items-center justify-between p-2 rounded bg-[var(--bg-secondary)] text-sm">
+                      <span className="text-xs text-[var(--text-muted)] w-20">{match.isHome ? 'Home' : 'Away'}</span>
+                      <span className="text-xs truncate flex-1">{match.opponentShort}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                        match.result === 'W' ? 'bg-green-500/20 text-green-400' :
+                        match.result === 'D' ? 'bg-yellow-500/20 text-yellow-400' :
+                        'bg-red-500/20 text-red-400'
+                      }`}>
+                        {match.result}
+                      </span>
+                      <span className="font-mono text-xs w-16 text-right">
+                        {match.home_score}-{match.away_score}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

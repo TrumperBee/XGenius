@@ -19,9 +19,10 @@ import {
 import { Button } from '@/components/ui';
 import { 
   TrendingUp, Target, Award, Calendar, ChevronRight, Loader2, AlertTriangle, 
-  Star, Zap, Clock, ExternalLink, RefreshCw, WifiOff 
+  Star, Zap, Clock, ExternalLink, RefreshCw, WifiOff, ShieldCheck
 } from 'lucide-react';
 import Link from 'next/link';
+import { generatePrediction } from '@/lib/predictionUtils';
 
 interface FixturesData {
   success: boolean;
@@ -350,27 +351,63 @@ export default function HomePage() {
           </GlassCardHeader>
           <GlassCardContent>
             <div className="grid gap-3 md:grid-cols-2">
-              {matches.slice(0, 4).map((match: any) => (
-                <Link 
-                  key={match.id} 
-                  href={`/match/${match.id}`}
-                  className="p-4 rounded-xl bg-black/30 backdrop-blur-sm border border-white/10 hover:border-blue-500/30 flex items-center justify-between transition-all duration-300 hover:-translate-y-0.5"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="text-center">
-                      <p className="font-medium text-sm text-white">{match.home_team.short_name}</p>
-                      <p className="text-xs text-gray-500">vs</p>
-                      <p className="font-medium text-sm text-white">{match.away_team.short_name}</p>
+              {matches.slice(0, 4).map((match: any) => {
+                const prediction = generatePrediction(
+                  match.home_team?.name || 'Home',
+                  match.away_team?.name || 'Away',
+                  match.id
+                );
+                const winnerLabel = prediction.predictedWinner === 'home' 
+                  ? match.home_team?.short_name 
+                  : prediction.predictedWinner === 'away' 
+                    ? match.away_team?.short_name 
+                    : 'Draw';
+                const winnerColor = prediction.predictedWinner === 'home' 
+                  ? 'text-green-400' 
+                  : prediction.predictedWinner === 'away' 
+                    ? 'text-red-400' 
+                    : 'text-gray-400';
+                
+                return (
+                  <Link 
+                    key={match.id} 
+                    href={`/match/${match.id}`}
+                    className="p-4 rounded-xl bg-black/30 backdrop-blur-sm border border-white/10 hover:border-blue-500/30 flex flex-col gap-3 transition-all duration-300 hover:-translate-y-0.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="text-center">
+                          <p className="font-medium text-sm text-white">{match.home_team?.short_name}</p>
+                          <p className="text-xs text-gray-500">vs</p>
+                          <p className="font-medium text-sm text-white">{match.away_team?.short_name}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <BadgeGlass variant="info">{match.league}</BadgeGlass>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(match.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <BadgeGlass variant="info">{match.league}</BadgeGlass>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {new Date(match.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </Link>
-              ))}
+                    
+                    <div className="border-t border-white/10 pt-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-green-400" />
+                          <span className="text-gray-400">Prediction:</span>
+                          <span className={`font-medium ${winnerColor}`}>{winnerLabel}</span>
+                        </div>
+                        <span className="text-yellow-400">{prediction.confidence}%</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                        <span className="bg-white/5 px-2 py-0.5 rounded">Score: {prediction.correctScore}</span>
+                        <span className="bg-white/5 px-2 py-0.5 rounded">O/U: {prediction.overUnder === 'over' ? 'Over' : 'Under'} 2.5</span>
+                        <span className="bg-white/5 px-2 py-0.5 rounded">BTTS: {prediction.btts === 'yes' ? 'Yes' : 'No'}</span>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </GlassCardContent>
         </GlassCard>
@@ -453,6 +490,14 @@ export default function HomePage() {
           Last updated: {new Date(stats.last_updated).toLocaleString()}
           <span className="mx-2">•</span>
           Next update: {new Date(stats.next_update).toLocaleString()}
+          <span className="mx-2">•</span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+            API-Football
+          </span>
         </div>
       )}
 

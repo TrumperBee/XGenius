@@ -47,7 +47,14 @@ export default function StatsPage() {
   async function fetchStats() {
     setLoading(true);
     try {
-      const response = await fetch('/api/stats?action=stats');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
+      const response = await fetch('/api/stats?action=stats', {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
       const data = await response.json();
       setStatsData(data);
       setLastUpdated(new Date().toLocaleString());
