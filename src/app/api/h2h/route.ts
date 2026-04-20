@@ -4,6 +4,7 @@ const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 async function getFromSupabase(team1: number, team2: number): Promise<any | null> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
@@ -29,27 +30,43 @@ async function getFromSupabase(team1: number, team2: number): Promise<any | null
   }
 }
 
+async function saveToSupabase(data: any) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/h2h_cache`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(data)
+    });
+  } catch (e) {
+    console.error(`Save error for h2h_cache:`, e);
+  }
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const team1 = searchParams.get('team1');
   const team2 = searchParams.get('team2');
-  const forceRefresh = searchParams.get('refresh') === 'true';
 
   if (!team1 || !team2) {
     return NextResponse.json({ error: 'team1 and team2 required' }, { status: 400 });
   }
 
-  if (!forceRefresh) {
-    const cached = await getFromSupabase(Number(team1), Number(team2));
-    if (cached) {
-      return NextResponse.json({
-        success: true,
-        has_history: true,
-        fixtures: cached.fixtures || [],
-        summary: cached.summary || null,
-        source: 'cache'
-      });
-    }
+  const cached = await getFromSupabase(Number(team1), Number(team2));
+  if (cached) {
+    return NextResponse.json({
+      success: true,
+      has_history: true,
+      fixtures: cached.fixtures || [],
+      summary: cached.summary || null,
+      source: 'database'
+    });
   }
 
   if (!API_KEY) {
@@ -114,16 +131,27 @@ export async function GET(request: Request) {
     const homeWins = fixtures.filter((f: any) => f.winner === 'home').length;
     const awayWins = fixtures.filter((f: any) => f.winner === 'away').length;
     const draws = fixtures.filter((f: any) => f.winner === 'draw').length;
-    const totalGoalsHome = fixtures.reduce((sum: number, f: any) => sum + (f.home_score || 0), 0);
-    const totalGoalsAway = fixtures.reduce((sum: number, f: any) => sum + (f.away_score || 0), 0);
 
     const summary = {
       total: fixtures.length,
       home_wins: homeWins,
       away_wins: awayWins,
       draws,
-      goals: { home: totalGoalsHome, away: totalGoalsAway }
+      goals: { 
+        home: fixtures.reduce((sum: number, f: any) => sum + (f.home_score || 0), 0), 
+        away: fixtures.reduce((sum: number, f: any) => sum + (f.away_score || 0), 0) 
+      }
     };
+
+    const minId = Math.min(Number(team1), Number(team2));
+    const maxId = Math.max(Number(team1), Number(team2));
+    
+    await saveToSupabase({
+      team1_id: minId,
+      team2_id: maxId,
+      fixtures,
+      summary
+    });
 
     return NextResponse.json({
       success: true,

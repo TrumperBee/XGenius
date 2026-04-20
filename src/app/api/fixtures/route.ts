@@ -4,14 +4,16 @@ const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const TOP_LEAGUE_IDS = [39, 140, 78, 135, 61, 2, 3, 848, 88, 94];
 
-async function getFromSupabase(date: string): Promise<any[] | null> {
+async function getFromSupabase(table: string, filters?: string): Promise<any | null> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
 
   try {
-    const url = `${SUPABASE_URL}/rest/v1/fixtures_cache?date=gte.${date}T00:00:00&date=lte.${date}T23:59:59&select=*`;
+    let url = `${SUPABASE_URL}/rest/v1/${table}`;
+    if (filters) url += `?${filters}`;
     
     const response = await fetch(url, {
       headers: {
@@ -24,6 +26,25 @@ async function getFromSupabase(date: string): Promise<any[] | null> {
     return await response.json();
   } catch {
     return null;
+  }
+}
+
+async function saveToSupabase(table: string, data: any) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(data)
+    });
+  } catch (e) {
+    console.error(`Save error for ${table}:`, e);
   }
 }
 
@@ -43,49 +64,32 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dateParam = searchParams.get('date');
   const days = parseInt(searchParams.get('days') || '1');
-  const forceRefresh = searchParams.get('refresh') === 'true';
 
   const baseDate = dateParam ? new Date(dateParam + 'T00:00:00Z') : new Date();
   const date = baseDate.toISOString().split('T')[0];
 
   const fixturesByDate: Record<string, any[]> = {};
 
-  if (!forceRefresh) {
-    for (let i = 0; i < days; i++) {
-      const currentDate = new Date(baseDate);
-      currentDate.setDate(currentDate.getDate() + i);
-      const dateStr = currentDate.toISOString().split('T')[0];
+  for (let i = 0; i < days; i++) {
+    const currentDate = new Date(baseDate);
+    currentDate.setDate(currentDate.getDate() + i);
+    const dateStr = currentDate.toISOString().split('T')[0];
 
-      const cached = await getFromSupabase(dateStr);
-      if (cached && cached.length > 0) {
-        fixturesByDate[dateStr] = cached.map((f: any) => ({
-          id: f.id,
-          date: f.date,
-          league: f.league,
-          league_id: f.league_id,
-          country: f.country,
-          home_team: f.home_team,
-          away_team: f.away_team,
-          home_score: f.home_score,
-          away_score: f.away_score,
-          status: f.status,
-          status_long: f.status_long
-        }));
-      }
+    const cached = await getFromSupabase('fixtures_cache', `date=gte.${dateStr}T00:00:00&date=lte.${dateStr}T23:59:59&select=*`);
+    if (cached && cached.length > 0) {
+      fixturesByDate[dateStr] = cached;
     }
+  }
 
-    const cachedCount = Object.values(fixturesByDate).flat().length;
-    if (cachedCount > 0) {
-      console.log(`[CACHE] Returning ${cachedCount} fixtures from Supabase`);
-      
-      return NextResponse.json({
-        success: true,
-        date,
-        matches: Object.values(fixturesByDate).flat(),
-        total: cachedCount,
-        source: 'supabase'
-      });
-    }
+  const cachedCount = Object.values(fixturesByDate).flat().length;
+  if (cachedCount > 0) {
+    return NextResponse.json({
+      success: true,
+      date,
+      matches: Object.values(fixturesByDate).flat(),
+      total: cachedCount,
+      source: 'database'
+    });
   }
 
   try {
@@ -124,6 +128,7 @@ export async function GET(request: Request) {
         }));
 
       fixturesByDate[dateStr] = matches;
+      await saveToSupabase('fixtures_cache', matches);
       await new Promise(r => setTimeout(r, 200));
     }
 

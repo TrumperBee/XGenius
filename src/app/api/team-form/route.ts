@@ -4,6 +4,7 @@ const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 async function getFromSupabase(table: string, filters?: string): Promise<any | null> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
@@ -26,6 +27,25 @@ async function getFromSupabase(table: string, filters?: string): Promise<any | n
   }
 }
 
+async function saveToSupabase(table: string, data: any) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(data)
+    });
+  } catch (e) {
+    console.error(`Save error for ${table}:`, e);
+  }
+}
+
 async function fetchFromAPI(path: string): Promise<any> {
   if (!API_KEY) throw new Error('API key not configured');
   
@@ -41,24 +61,21 @@ async function fetchFromAPI(path: string): Promise<any> {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const teamId = searchParams.get('teamId');
-  const forceRefresh = searchParams.get('refresh') === 'true';
 
   if (!teamId) {
     return NextResponse.json({ error: 'teamId required' }, { status: 400 });
   }
 
-  if (!forceRefresh) {
-    const cached = await getFromSupabase('team_form_cache', `team_id=eq.${teamId}&limit=1`);
-    if (cached && cached.length > 0) {
-      const data = cached[0];
-      return NextResponse.json({
-        success: true,
-        fixtures: data.fixtures || [],
-        summary: data.summary || null,
-        form: data.form_data || [],
-        source: 'cache'
-      });
-    }
+  const cached = await getFromSupabase('team_form_cache', `team_id=eq.${teamId}&limit=1`);
+  if (cached && cached.length > 0) {
+    const data = cached[0];
+    return NextResponse.json({
+      success: true,
+      fixtures: data.fixtures || [],
+      summary: data.summary || null,
+      form: data.form_data || [],
+      source: 'database'
+    });
   }
 
   try {
@@ -90,32 +107,31 @@ export async function GET(request: Request) {
         };
       });
 
-    if (fixtures.length === 0) {
-      return NextResponse.json({
-        success: true,
-        fixtures: [],
-        summary: null,
-        form: [],
-        source: 'api'
-      });
-    }
-
     const wins = fixtures.filter((f: any) => f.result === 'W').length;
     const draws = fixtures.filter((f: any) => f.result === 'D').length;
     const losses = fixtures.filter((f: any) => f.result === 'L').length;
+    
+    const summary = {
+      total: fixtures.length,
+      wins,
+      draws,
+      losses,
+      goalsFor: fixtures.reduce((sum: number, f: any) => sum + f.goalsFor, 0),
+      goalsAgainst: fixtures.reduce((sum: number, f: any) => sum + f.goalsAgainst, 0),
+      cleanSheets: fixtures.filter((f: any) => f.goalsAgainst === 0).length
+    };
+
+    await saveToSupabase('team_form_cache', {
+      team_id: Number(teamId),
+      form_data: fixtures.slice(0, 5).map((f: any) => f.result),
+      summary,
+      fixtures
+    });
 
     return NextResponse.json({
       success: true,
       fixtures,
-      summary: {
-        total: fixtures.length,
-        wins,
-        draws,
-        losses,
-        goalsFor: fixtures.reduce((sum: number, f: any) => sum + f.goalsFor, 0),
-        goalsAgainst: fixtures.reduce((sum: number, f: any) => sum + f.goalsAgainst, 0),
-        cleanSheets: fixtures.filter((f: any) => f.goalsAgainst === 0).length
-      },
+      summary,
       form: fixtures.slice(0, 5).map((f: any) => f.result),
       source: 'api'
     });
