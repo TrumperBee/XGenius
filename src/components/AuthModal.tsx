@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, signInWithEmail, signUpWithEmail, signInWithGoogle, getCurrentUser, signOut, ensureProfileExists } from '@/lib/auth';
-import { User } from '@/lib/auth';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, getCurrentUser, signOut, ensureProfileExists, User } from '@/lib/auth';
+import { doc, setDoc, db } from '@/lib/firebase';
 import { Loader2, X, Mail, Lock, Eye, EyeOff, Check, AlertCircle, ArrowRight, ArrowLeft, UserPlus, LogIn, Sparkles, TrendingUp, Trophy, Bell, Zap, LogOut } from 'lucide-react';
 import { mockTeams } from '@/data/mockData';
 import styles from './AuthModal.module.css';
@@ -659,10 +659,11 @@ export function OnboardingModal({ isOpen, user, onComplete, onSkip }: Onboarding
     };
     
     try {
-      await supabase.from('user_preferences').upsert({
+      await setDoc(doc(db, 'user_preferences', user.id), {
         user_id: user.id,
         ...preferences,
-      });
+        updated_at: new Date().toISOString()
+      }, { merge: true });
     } catch (e) {
       console.error('Failed to save preferences:', e);
     }

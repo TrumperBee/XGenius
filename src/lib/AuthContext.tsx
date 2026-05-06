@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initAuth();
 
-    const { data: { subscription } } = onAuthStateChange(async (authUser) => {
+    const unsubscribe = onAuthStateChange(async (authUser) => {
       if (authUser) {
         const currentUser = await getCurrentUser();
         setUser(currentUser);
@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, [mounted]);
 
   const openAuthModal = useCallback((tab: 'signin' | 'signup' = 'signup') => {

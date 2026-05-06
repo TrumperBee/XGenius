@@ -2,57 +2,56 @@ import { NextResponse } from 'next/server';
 
 const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
+const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgenius-b8ffe';
 
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 const TOP_LEAGUE_IDS = [39, 140, 78, 135, 61, 2, 3, 848, 88, 94];
 
-async function supabaseFetch(table: string, method: string = 'GET') {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-    console.log('Supabase not configured');
-    return null;
-  }
+async function saveToFirestore(collection: string, docId: string, data: any) {
+  if (!FIREBASE_API_KEY) return;
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method,
-      headers: {
-        'apikey': SUPABASE_SERVICE_KEY,
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': method === 'GET' ? 'return=representation' : 'return=minimal'
-      }
+    const url = `${FIRESTORE_BASE}/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+    
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: convertToFirestoreFields(data)
+      })
     });
-    
-    if (!response.ok) {
-      console.error(`Supabase ${table} error:`, await response.text());
-      return null;
-    }
-    
-    return method === 'GET' ? await response.json() : true;
   } catch (e) {
-    console.error(`Supabase ${table} error:`, e);
-    return null;
+    console.error(`Save error for ${collection}:`, e);
   }
 }
 
-async function upsertToSupabase(table: string, data: any) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
-
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_SERVICE_KEY,
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify(data)
-    });
-  } catch (e) {
-    console.error(`Upsert error for ${table}:`, e);
+function convertToFirestoreFields(data: any): any {
+  const result: any = {};
+  for (const key in data) {
+    const value = data[key];
+    if (value === null || value === undefined) result[key] = { nullValue: null };
+    else if (typeof value === 'string') result[key] = { stringValue: value };
+    else if (typeof value === 'number') result[key] = Number.isInteger(value) ? { integerValue: value } : { doubleValue: value };
+    else if (typeof value === 'boolean') result[key] = { booleanValue: value };
+    else if (Array.isArray(value)) {
+      result[key] = {
+        arrayValue: {
+          values: value.map((v: any) => {
+            if (typeof v === 'string') return { stringValue: v };
+            if (typeof v === 'number') return { integerValue: v };
+            if (typeof v === 'object' && v !== null) return { mapValue: { fields: convertToFirestoreFields(v) } };
+            return { stringValue: String(v) };
+          })
+        }
+      };
+    }
+    else if (typeof value === 'object') {
+      result[key] = { mapValue: { fields: convertToFirestoreFields(value) } };
+    }
+    else result[key] = { stringValue: String(value) };
   }
+  return result;
 }
 
 export async function GET(request: Request) {
@@ -104,11 +103,13 @@ export async function GET(request: Request) {
           home_score: f.score?.fulltime?.home,
           away_score: f.score?.fulltime?.away,
           status: f.status?.short === 'FT' ? 'finished' : f.status?.short === 'LIVE' ? 'live' : 'scheduled',
-          status_long: f.status?.long
+          status_long: f.status.long
         }));
 
       if (fixtures.length > 0) {
-        await upsertToSupabase('fixtures_cache', fixtures);
+        for (const fixture of fixtures) {
+          await saveToFirestore('fixtures_cache', String(fixture.id), fixture);
+        }
         results.fixtures += fixtures.length;
 
         fixtures.forEach((f: any) => {
@@ -165,7 +166,7 @@ export async function GET(request: Request) {
           const draws = mappedFixtures.filter((f: any) => f.result === 'D').length;
           const losses = mappedFixtures.filter((f: any) => f.result === 'L').length;
 
-          await upsertToSupabase('team_form_cache', {
+          await saveToFirestore('team_form_cache', String(teamId), {
             team_id: teamId,
             form_data: mappedFixtures.slice(0, 5).map((f: any) => f.result),
             summary: {

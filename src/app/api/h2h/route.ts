@@ -2,51 +2,95 @@ import { NextResponse } from 'next/server';
 
 const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
+const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgenius-b8ffe';
 
-async function getFromSupabase(team1: number, team2: number): Promise<any | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
-  const minId = Math.min(team1, team2);
-  const maxId = Math.max(team1, team2);
+async function getFromFirestore(collection: string, docId: string) {
+  if (!FIREBASE_API_KEY) return null;
 
   try {
-    const url = `${SUPABASE_URL}/rest/v1/h2h_cache?team1_id=eq.${minId}&team2_id=eq.${maxId}&limit=1`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
-    });
+    const url = `${FIRESTORE_BASE}/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+    const response = await fetch(url);
     
     if (!response.ok) return null;
     const data = await response.json();
-    return data.length > 0 ? data[0] : null;
+    
+    return {
+      id: data.name?.split('/').pop(),
+      ...convertFirestoreFields(data.fields || {})
+    };
   } catch {
     return null;
   }
 }
 
-async function saveToSupabase(data: any) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+function convertFirestoreFields(fields: any): any {
+  const result: any = {};
+  for (const key in fields) {
+    const field = fields[key];
+    if (field.stringValue !== undefined) result[key] = field.stringValue;
+    else if (field.integerValue !== undefined) result[key] = parseInt(field.integerValue);
+    else if (field.doubleValue !== undefined) result[key] = parseFloat(field.doubleValue);
+    else if (field.booleanValue !== undefined) result[key] = field.booleanValue;
+    else if (field.mapValue !== undefined) result[key] = convertFirestoreFields(field.mapValue.fields || {});
+    else if (field.arrayValue !== undefined) {
+      result[key] = (field.arrayValue.values || []).map((v: any) => 
+        v.stringValue !== undefined ? v.stringValue :
+        v.integerValue !== undefined ? parseInt(v.integerValue) :
+        v.mapValue !== undefined ? convertFirestoreFields(v.mapValue.fields || {}) :
+        v
+      );
+    }
+  }
+  return result;
+}
+
+async function saveToFirestore(collection: string, docId: string, data: any) {
+  if (!FIREBASE_API_KEY) return;
 
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/h2h_cache`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_SERVICE_KEY,
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify(data)
+    const url = `${FIRESTORE_BASE}/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+    
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: convertToFirestoreFields(data)
+      })
     });
   } catch (e) {
-    console.error(`Save error for h2h_cache:`, e);
+    console.error(`Save error for ${collection}:`, e);
   }
+}
+
+function convertToFirestoreFields(data: any): any {
+  const result: any = {};
+  for (const key in data) {
+    const value = data[key];
+    if (value === null || value === undefined) result[key] = { nullValue: null };
+    else if (typeof value === 'string') result[key] = { stringValue: value };
+    else if (typeof value === 'number') result[key] = Number.isInteger(value) ? { integerValue: value } : { doubleValue: value };
+    else if (typeof value === 'boolean') result[key] = { booleanValue: value };
+    else if (Array.isArray(value)) {
+      result[key] = {
+        arrayValue: {
+          values: value.map(v => {
+            if (typeof v === 'string') return { stringValue: v };
+            if (typeof v === 'number') return { integerValue: v };
+            if (typeof v === 'object' && v !== null) return { mapValue: { fields: convertToFirestoreFields(v) } };
+            return { stringValue: String(v) };
+          })
+        }
+      };
+    }
+    else if (typeof value === 'object') {
+      result[key] = { mapValue: { fields: convertToFirestoreFields(value) } };
+    }
+    else result[key] = { stringValue: String(value) };
+  }
+  return result;
 }
 
 export async function GET(request: Request) {
@@ -58,14 +102,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'team1 and team2 required' }, { status: 400 });
   }
 
-  const cached = await getFromSupabase(Number(team1), Number(team2));
+  const minId = Math.min(Number(team1), Number(team2));
+  const maxId = Math.max(Number(team1), Number(team2));
+  const cacheDocId = `${minId}_${maxId}`;
+
+  const cached = await getFromFirestore('h2h_cache', cacheDocId);
   if (cached) {
     return NextResponse.json({
       success: true,
       has_history: true,
       fixtures: cached.fixtures || [],
       summary: cached.summary || null,
-      source: 'database'
+      source: 'firebase'
     });
   }
 
@@ -142,11 +190,8 @@ export async function GET(request: Request) {
         away: fixtures.reduce((sum: number, f: any) => sum + (f.away_score || 0), 0) 
       }
     };
-
-    const minId = Math.min(Number(team1), Number(team2));
-    const maxId = Math.max(Number(team1), Number(team2));
     
-    await saveToSupabase({
+    await saveToFirestore('h2h_cache', cacheDocId, {
       team1_id: minId,
       team2_id: maxId,
       fixtures,

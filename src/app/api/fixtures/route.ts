@@ -2,50 +2,130 @@ import { NextResponse } from 'next/server';
 
 const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
+const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgenius-b8ffe';
 
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 const TOP_LEAGUE_IDS = [39, 140, 78, 135, 61, 2, 3, 848, 88, 94];
 
-async function getFromSupabase(table: string, filters?: string): Promise<any | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+async function getFromFirestore(collection: string, whereField?: string, whereValue?: string) {
+  if (!FIREBASE_API_KEY) return null;
 
   try {
-    let url = `${SUPABASE_URL}/rest/v1/${table}`;
-    if (filters) url += `?${filters}`;
+    let url = `${FIRESTORE_BASE}/${collection}?key=${FIREBASE_API_KEY}`;
+    if (whereField && whereValue) {
+      url = `${FIRESTORE_BASE}/${collection}:runQuery?key=${FIREBASE_API_KEY}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: collection }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: whereField },
+                op: 'EQUAL',
+                value: { integerValue: whereValue }
+              }
+            }
+          }
+        })
+      });
+      
+      if (!response.ok) return null;
+      const data = await response.json();
+      
+      if (!data || !Array.isArray(data)) return [];
+      return data
+        .filter((item: any) => item.document)
+        .map((item: any) => ({
+          id: item.document.name?.split('/').pop(),
+          ...convertFirestoreFields(item.document.fields || {})
+        }));
+    }
     
-    const response = await fetch(url, {
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
-    });
-    
+    const response = await fetch(url);
     if (!response.ok) return null;
-    return await response.json();
+    const data = await response.json();
+    
+    if (!data.documents) return [];
+    return data.documents.map((doc: any) => ({
+      id: doc.name?.split('/').pop(),
+      ...convertFirestoreFields(doc.fields || {})
+    }));
   } catch {
     return null;
   }
 }
 
-async function saveToSupabase(table: string, data: any) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+function convertFirestoreFields(fields: any): any {
+  const result: any = {};
+  for (const key in fields) {
+    const field = fields[key];
+    if (field.stringValue !== undefined) result[key] = field.stringValue;
+    else if (field.integerValue !== undefined) result[key] = parseInt(field.integerValue);
+    else if (field.doubleValue !== undefined) result[key] = parseFloat(field.doubleValue);
+    else if (field.booleanValue !== undefined) result[key] = field.booleanValue;
+    else if (field.mapValue !== undefined) result[key] = convertFirestoreFields(field.mapValue.fields || {});
+    else if (field.arrayValue !== undefined) {
+      result[key] = (field.arrayValue.values || []).map((v: any) => 
+        v.stringValue !== undefined ? v.stringValue :
+        v.integerValue !== undefined ? parseInt(v.integerValue) :
+        v.mapValue !== undefined ? convertFirestoreFields(v.mapValue.fields || {}) :
+        v
+      );
+    }
+  }
+  return result;
+}
+
+async function saveToFirestore(collection: string, docId: string, data: any) {
+  if (!FIREBASE_API_KEY) return;
 
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_SERVICE_KEY,
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify(data)
+    const url = `${FIRESTORE_BASE}/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+    
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: convertToFirestoreFields(data)
+      })
     });
   } catch (e) {
-    console.error(`Save error for ${table}:`, e);
+    console.error(`Save error for ${collection}:`, e);
   }
+}
+
+function convertToFirestoreFields(data: any): any {
+  const result: any = {};
+  for (const key in data) {
+    const value = data[key];
+    if (value === null || value === undefined) result[key] = { nullValue: null };
+    else if (typeof value === 'string') result[key] = { stringValue: value };
+    else if (typeof value === 'number') {
+      result[key] = Number.isInteger(value) ? { integerValue: value } : { doubleValue: value };
+    }
+    else if (typeof value === 'boolean') result[key] = { booleanValue: value };
+    else if (Array.isArray(value)) {
+      result[key] = {
+        arrayValue: {
+          values: value.map(v => {
+            if (typeof v === 'string') return { stringValue: v };
+            if (typeof v === 'number') return { integerValue: v };
+            if (typeof v === 'object' && v !== null) return { mapValue: { fields: convertToFirestoreFields(v) } };
+            return { stringValue: String(v) };
+          })
+        }
+      };
+    }
+    else if (typeof value === 'object') {
+      result[key] = { mapValue: { fields: convertToFirestoreFields(value) } };
+    }
+    else result[key] = { stringValue: String(value) };
+  }
+  return result;
 }
 
 async function fetchFromAPI(path: string): Promise<any> {
@@ -68,31 +148,26 @@ export async function GET(request: Request) {
   const baseDate = dateParam ? new Date(dateParam + 'T00:00:00Z') : new Date();
   const date = baseDate.toISOString().split('T')[0];
 
-  const fixturesByDate: Record<string, any[]> = {};
-
   for (let i = 0; i < days; i++) {
     const currentDate = new Date(baseDate);
     currentDate.setDate(currentDate.getDate() + i);
     const dateStr = currentDate.toISOString().split('T')[0];
 
-    const cached = await getFromSupabase('fixtures_cache', `date=gte.${dateStr}T00:00:00&date=lte.${dateStr}T23:59:59&select=*`);
+    const cached = await getFromFirestore('fixtures_cache', 'date', String(currentDate.getTime()));
     if (cached && cached.length > 0) {
-      fixturesByDate[dateStr] = cached;
+      return NextResponse.json({
+        success: true,
+        date,
+        matches: cached,
+        total: cached.length,
+        source: 'firebase'
+      });
     }
   }
 
-  const cachedCount = Object.values(fixturesByDate).flat().length;
-  if (cachedCount > 0) {
-    return NextResponse.json({
-      success: true,
-      date,
-      matches: Object.values(fixturesByDate).flat(),
-      total: cachedCount,
-      source: 'database'
-    });
-  }
-
   try {
+    const allMatches: any[] = [];
+    
     for (let i = 0; i < days; i++) {
       const currentDate = new Date(baseDate);
       currentDate.setDate(currentDate.getDate() + i);
@@ -127,12 +202,13 @@ export async function GET(request: Request) {
           status_long: f.status?.long
         }));
 
-      fixturesByDate[dateStr] = matches;
-      await saveToSupabase('fixtures_cache', matches);
+      for (const match of matches) {
+        await saveToFirestore('fixtures_cache', String(match.id), match);
+        allMatches.push(match);
+      }
+      
       await new Promise(r => setTimeout(r, 200));
     }
-
-    const allMatches = Object.values(fixturesByDate).flat();
 
     return NextResponse.json({
       success: true,

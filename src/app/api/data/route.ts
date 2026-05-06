@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchTeams, fetchMatches, saveMatchResult, logPerformance } from '@/lib/supabase-data';
+import { fetchTeams, fetchMatches, saveMatchResult, logPerformance } from '@/lib/data';
 
 const FOOTBALL_API_KEY = process.env.FOOTBALL_API_KEY;
 const API_BASE = 'https://v3.football.api-sports.io';
