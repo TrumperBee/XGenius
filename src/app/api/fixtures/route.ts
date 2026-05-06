@@ -8,8 +8,6 @@ const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgen
 
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
-const LEAGUE_IDS_NO_FRIENDLY = ALLOWED_LEAGUE_IDS.filter(id => id !== 666 && id !== 667);
-
 async function queryFirestoreByDate(dateStr: string) {
   if (!FIREBASE_API_KEY) return [];
   try {
@@ -111,6 +109,31 @@ function convertToFirestoreFields(data: any): any {
   return result;
 }
 
+async function fetchAllFixtures(dateStr: string): Promise<any[]> {
+  if (!API_KEY) return [];
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    
+    const response = await fetch(`${API_BASE}/fixtures?date=${dateStr}&timezone=UTC`, {
+      headers: { 'x-apisports-key': API_KEY },
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeout);
+    
+    if (!response.ok) {
+      console.error(`API error: ${response.status}`);
+      return [];
+    }
+    const data = await response.json();
+    return data.response || [];
+  } catch (error) {
+    console.error(`Fetch error for ${dateStr}:`, error);
+    return [];
+  }
+}
+
 function mapFixture(f: any): any {
   return {
     id: f.fixture.id,
@@ -135,45 +158,6 @@ function mapFixture(f: any): any {
     status: f.status?.short === 'FT' ? 'finished' : f.status?.short === 'LIVE' ? 'live' : 'scheduled',
     status_long: f.status?.long
   };
-}
-
-async function fetchLeagueFixtures(dateStr: string, leagueId: number): Promise<any[]> {
-  if (!API_KEY) return [];
-  try {
-    const response = await fetch(`${API_BASE}/fixtures?date=${dateStr}&league=${leagueId}&timezone=UTC`, {
-      headers: { 'x-apisports-key': API_KEY },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.response || [];
-  } catch {
-    return [];
-  }
-}
-
-async function fetchFriendlies(dateStr: string): Promise<any[]> {
-  if (!API_KEY) return [];
-  const results: any[] = [];
-  
-  const months = new Date(dateStr).getMonth();
-  if (![2, 5, 8, 10].includes(months)) return results;
-  
-  for (const leagueId of [666, 667]) {
-    try {
-      const response = await fetch(`${API_BASE}/fixtures?date=${dateStr}&league=${leagueId}&timezone=UTC`, {
-        headers: { 'x-apisports-key': API_KEY },
-        signal: AbortSignal.timeout(8000)
-      });
-      if (response.ok) {
-        const data = await response.json();
-        results.push(...(data.response || []));
-      }
-    } catch {
-      continue;
-    }
-  }
-  return results;
 }
 
 export async function GET(request: Request) {
@@ -201,7 +185,7 @@ export async function GET(request: Request) {
   }
 
   if (needsCache && API_KEY) {
-    console.log('Cache miss - fetching from API league-by-league and caching...');
+    console.log('Cache miss - fetching all fixtures from API (single call) and caching...');
     allMatches.length = 0;
     
     for (let i = 0; i < days; i++) {
@@ -209,24 +193,15 @@ export async function GET(request: Request) {
       currentDate.setDate(currentDate.getDate() + i);
       const dateStr = currentDate.toISOString().split('T')[0];
 
-      console.log(`Fetching ${LEAGUE_IDS_NO_FRIENDLY.length} leagues for ${dateStr}...`);
-
-      const leaguePromises = LEAGUE_IDS_NO_FRIENDLY.map(leagueId => 
-        fetchLeagueFixtures(dateStr, leagueId)
-      );
+      const apiFixtures = await fetchAllFixtures(dateStr);
       
-      const leagueResults = await Promise.all(leaguePromises);
-      
-      const friendlies = await fetchFriendlies(dateStr);
-      leagueResults.push(friendlies);
+      const matches = apiFixtures
+        .filter((f: any) => ALLOWED_LEAGUE_IDS.includes(f.league.id))
+        .map((f: any) => mapFixture(f));
 
-      for (const fixtures of leagueResults) {
-        for (const f of fixtures) {
-          if (!ALLOWED_LEAGUE_IDS.includes(f.league.id)) continue;
-          const match = mapFixture(f);
-          await saveToFirestore(String(match.id), match);
-          allMatches.push(match);
-        }
+      for (const match of matches) {
+        await saveToFirestore(String(match.id), match);
+        allMatches.push(match);
       }
       
       if (i < days - 1) await new Promise(r => setTimeout(r, 200));
