@@ -110,7 +110,7 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
     setH2hLoading(true);
 
     const currentYear = new Date().getFullYear();
-    const season = String(new Date().getMonth() >= 7 ? currentYear : currentYear - 1);
+    const season = '2024';
 
     try {
       const [homeStatsRes, awayStatsRes, homeFormRes, awayFormRes, h2hRes, homeInjuriesRes, awayInjuriesRes] = await Promise.allSettled([

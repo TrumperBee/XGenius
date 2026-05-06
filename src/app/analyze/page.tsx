@@ -114,7 +114,7 @@ export default function AnalyzePage() {
     setLoading(true);
 
     const currentYear = new Date().getFullYear();
-    const season = String(new Date().getMonth() >= 7 ? currentYear : currentYear - 1);
+    const season = '2024';
 
     try {
       const [h2hRes, homeFormRes, awayFormRes, homeStatsRes, awayStatsRes] = await Promise.allSettled([

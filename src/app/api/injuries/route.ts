@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const response = await fetch(`${API_BASE}/players/injuries?team=${teamId}&season=2025`, {
+    const response = await fetch(`${API_BASE}/players/injuries?team=${teamId}&season=2024`, {
       headers: { 'x-apisports-key': API_KEY },
       signal: AbortSignal.timeout(8000)
     });

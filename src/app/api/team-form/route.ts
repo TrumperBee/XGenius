@@ -89,12 +89,10 @@ function convertToFirestoreFields(data: any): any {
 }
 
 function getSeasonDates() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const seasonStart = month >= 7 ? `${year}-08-01` : `${year - 1}-08-01`;
-  const seasonEnd = `${year}-06-30`;
-  return { from: seasonStart, to: seasonEnd };
+  // Free API plan only supports 2022-2024 seasons
+  const from = '2024-08-01';
+  const to = '2025-06-30';
+  return { from, to, season: '2024' };
 }
 
 export async function GET(request: Request) {
@@ -121,10 +119,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { from, to } = getSeasonDates();
-    console.log(`Fetching form for team ${teamId} from ${from} to ${to}...`);
+    const { from, to, season } = getSeasonDates();
+    console.log(`Fetching form for team ${teamId} from ${from} to ${to} (season ${season})...`);
     
-    const response = await fetch(`${API_BASE}/fixtures?team=${teamId}&from=${from}&to=${to}&status=FT`, {
+    const response = await fetch(`${API_BASE}/fixtures?team=${teamId}&from=${from}&to=${to}&season=${season}&status=FT`, {
       headers: { 'x-apisports-key': API_KEY },
       signal: AbortSignal.timeout(15000)
     });

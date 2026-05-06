@@ -117,10 +117,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const now = new Date();
-    const threeYearsAgo = new Date(now.getFullYear() - 3, now.getMonth(), now.getDate());
-    const from = threeYearsAgo.toISOString().split('T')[0];
-    const to = now.toISOString().split('T')[0];
+    // Free API plan supports 2022-2024 seasons
+    const from = '2022-08-01';
+    const to = '2025-06-30';
 
     console.log(`Fetching H2H for teams ${team1}-${team2} from ${from} to ${to}...`);
 

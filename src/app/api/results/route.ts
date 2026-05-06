@@ -144,8 +144,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const currentYear = new Date().getFullYear();
-    const season = String(new Date().getMonth() >= 7 ? currentYear : currentYear - 1);
+    const season = '2024';
 
     const teamIds = [...new Set(matches.flatMap(f => [String(f.teams.home.id), String(f.teams.away.id)]))];
     const statsCache: Record<string, any> = {};

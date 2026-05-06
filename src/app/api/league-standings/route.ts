@@ -66,7 +66,7 @@ function convertToFields(data: any): any {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const leagueId = searchParams.get('leagueId');
-  const season = searchParams.get('season') || '2025';
+  const season = searchParams.get('season') || '2024';
 
   if (!leagueId) {
     return NextResponse.json({ error: 'leagueId required' }, { status: 400 });
