@@ -16,7 +16,6 @@ async function getFromFirestore(collection: string, docId: string) {
     const data = await response.json();
     if (!data.fields) return null;
     const fields = convertFirestoreFields(data.fields || {});
-    // Only return if there's actual data
     if (fields.fixtures && Array.isArray(fields.fixtures) && fields.fixtures.length > 0) {
       return { id: data.name?.split('/').pop(), ...fields };
     }
@@ -89,6 +88,15 @@ function convertToFirestoreFields(data: any): any {
   return result;
 }
 
+function getSeasonDates() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const seasonStart = month >= 7 ? `${year}-08-01` : `${year - 1}-08-01`;
+  const seasonEnd = `${year}-06-30`;
+  return { from: seasonStart, to: seasonEnd };
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const teamId = searchParams.get('teamId');
@@ -113,8 +121,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    console.log(`Fetching form for team ${teamId} from API...`);
-    const response = await fetch(`${API_BASE}/fixtures?team=${teamId}&last=10&status=FT`, {
+    const { from, to } = getSeasonDates();
+    console.log(`Fetching form for team ${teamId} from ${from} to ${to}...`);
+    
+    const response = await fetch(`${API_BASE}/fixtures?team=${teamId}&from=${from}&to=${to}&status=FT`, {
       headers: { 'x-apisports-key': API_KEY },
       signal: AbortSignal.timeout(15000)
     });
@@ -125,31 +135,31 @@ export async function GET(request: Request) {
     }
 
     const data = await response.json();
-    const rawFixtures = data.response || [];
+    const rawFixtures = (data.response || []).filter((f: any) => f.score?.fulltime?.home !== null);
     
     console.log(`Raw fixtures for team ${teamId}: ${rawFixtures.length}`);
+
+    const sorted = rawFixtures.sort((a: any, b: any) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime());
+    const recent = sorted.slice(0, 10);
     
-    const fixtures: Array<{ id: number; date: string; league: string; opponent: string; opponentShort: string; isHome: boolean; home_score: number; away_score: number; goalsFor: number; goalsAgainst: number; result: string }> = rawFixtures
-      .filter((f: any) => f.score?.fulltime?.home !== null)
-      .slice(0, 10)
-      .map((f: any) => {
-        const isHome = f.teams.home.id === Number(teamId);
-        const goalsFor = isHome ? f.score.fulltime.home : f.score.fulltime.away;
-        const goalsAgainst = isHome ? f.score.fulltime.away : f.score.fulltime.home;
-        return {
-          id: f.fixture.id,
-          date: f.fixture.date,
-          league: f.league.name,
-          opponent: isHome ? f.teams.away.name : f.teams.home.name,
-          opponentShort: (isHome ? f.teams.away.name : f.teams.home.name).substring(0, 3).toUpperCase(),
-          isHome,
-          home_score: f.score.fulltime.home ?? 0,
-          away_score: f.score.fulltime.away ?? 0,
-          goalsFor,
-          goalsAgainst,
-          result: goalsFor > goalsAgainst ? 'W' : goalsFor === goalsAgainst ? 'D' : 'L'
-        };
-      });
+    const fixtures: Array<{ id: number; date: string; league: string; opponent: string; opponentShort: string; isHome: boolean; home_score: number; away_score: number; goalsFor: number; goalsAgainst: number; result: string }> = recent.map((f: any) => {
+      const isHome = f.teams.home.id === Number(teamId);
+      const goalsFor = isHome ? f.score.fulltime.home : f.score.fulltime.away;
+      const goalsAgainst = isHome ? f.score.fulltime.away : f.score.fulltime.home;
+      return {
+        id: f.fixture.id,
+        date: f.fixture.date,
+        league: f.league.name,
+        opponent: isHome ? f.teams.away.name : f.teams.home.name,
+        opponentShort: (isHome ? f.teams.away.name : f.teams.home.name).substring(0, 3).toUpperCase(),
+        isHome,
+        home_score: f.score.fulltime.home ?? 0,
+        away_score: f.score.fulltime.away ?? 0,
+        goalsFor,
+        goalsAgainst,
+        result: goalsFor > goalsAgainst ? 'W' : goalsFor === goalsAgainst ? 'D' : 'L'
+      };
+    });
 
     console.log(`Processed fixtures: ${fixtures.length}`);
 

@@ -16,7 +16,6 @@ async function getFromFirestore(collection: string, docId: string) {
     const data = await response.json();
     if (!data.fields) return null;
     const fields = convertFirestoreFields(data.fields || {});
-    // Only return if there's actual H2H data
     if (fields.fixtures && Array.isArray(fields.fixtures) && fields.fixtures.length > 0) {
       return { id: data.name?.split('/').pop(), ...fields };
     }
@@ -118,31 +117,40 @@ export async function GET(request: Request) {
   }
 
   try {
-    const response = await fetch(`${API_BASE}/fixtures?h2h=${team1}-${team2}&last=10`, {
+    const now = new Date();
+    const threeYearsAgo = new Date(now.getFullYear() - 3, now.getMonth(), now.getDate());
+    const from = threeYearsAgo.toISOString().split('T')[0];
+    const to = now.toISOString().split('T')[0];
+
+    console.log(`Fetching H2H for teams ${team1}-${team2} from ${from} to ${to}...`);
+
+    const response = await fetch(`${API_BASE}/fixtures?h2h=${team1}-${team2}&from=${from}&to=${to}`, {
       headers: { 'x-apisports-key': API_KEY },
       signal: AbortSignal.timeout(15000)
     });
 
     if (!response.ok) {
+      console.error(`H2H API error: ${response.status}`);
       return NextResponse.json({ success: true, has_history: false, fixtures: [], summary: null, source: 'api' });
     }
 
     const data = await response.json();
-    const rawFixtures = data.response || [];
+    const rawFixtures = (data.response || []).filter((f: any) => f.score?.fulltime?.home !== null);
     
-    const fixtures: Array<{ id: number; date: string; league: string; competition: string; home_team: { id: number; name: string; logo: string }; away_team: { id: number; name: string; logo: string }; home_score: number; away_score: number; winner: string }> = rawFixtures
-      .filter((f: any) => f.score?.fulltime?.home !== null)
-      .map((f: any) => ({
-        id: f.fixture.id,
-        date: f.fixture.date,
-        league: f.league.name,
-        competition: f.league.name,
-        home_team: { id: f.teams.home.id, name: f.teams.home.name, logo: f.teams.home.logo },
-        away_team: { id: f.teams.away.id, name: f.teams.away.name, logo: f.teams.away.logo },
-        home_score: f.score.fulltime.home ?? 0,
-        away_score: f.score.fulltime.away ?? 0,
-        winner: f.score.fulltime.home > f.score.fulltime.away ? 'home' : f.score.fulltime.away > f.score.fulltime.home ? 'away' : 'draw'
-      }));
+    console.log(`Raw H2H fixtures: ${rawFixtures.length}`);
+
+    const sorted = rawFixtures.sort((a: any, b: any) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime());
+    const fixtures: Array<{ id: number; date: string; league: string; competition: string; home_team: { id: number; name: string; logo: string }; away_team: { id: number; name: string; logo: string }; home_score: number; away_score: number; winner: string }> = sorted.slice(0, 10).map((f: any) => ({
+      id: f.fixture.id,
+      date: f.fixture.date,
+      league: f.league.name,
+      competition: f.league.name,
+      home_team: { id: f.teams.home.id, name: f.teams.home.name, logo: f.teams.home.logo },
+      away_team: { id: f.teams.away.id, name: f.teams.away.name, logo: f.teams.away.logo },
+      home_score: f.score.fulltime.home ?? 0,
+      away_score: f.score.fulltime.away ?? 0,
+      winner: f.score.fulltime.home > f.score.fulltime.away ? 'home' : f.score.fulltime.away > f.score.fulltime.home ? 'away' : 'draw'
+    }));
 
     const summary = {
       total: fixtures.length,
@@ -155,12 +163,14 @@ export async function GET(request: Request) {
       }
     };
 
-    await saveToFirestore('h2h_cache', cacheDocId, {
-      team1_id: minId,
-      team2_id: maxId,
-      fixtures,
-      summary
-    });
+    if (fixtures.length > 0) {
+      await saveToFirestore('h2h_cache', cacheDocId, {
+        team1_id: minId,
+        team2_id: maxId,
+        fixtures,
+        summary
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -171,6 +181,7 @@ export async function GET(request: Request) {
     });
 
   } catch (error) {
+    console.error('H2H fetch error:', error);
     return NextResponse.json({ success: false, has_history: false, fixtures: [], summary: null, source: 'error' });
   }
 }
