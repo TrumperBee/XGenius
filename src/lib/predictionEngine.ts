@@ -1,288 +1,349 @@
-import { Team, Match, Prediction, TeamForm, HeadToHead, Injury } from '@/types';
-import { mockTeamForms, mockHeadToHeads, mockInjuries } from '@/data/mockData';
-
-const WEIGHTS = {
-  form: 0.25,
-  h2h: 0.15,
-  homeAway: 0.20,
-  attack: 0.15,
-  defense: 0.15,
-  elo: 0.10,
-};
-
-function sigmoid(x: number): number {
-  return 1 / (1 + Math.exp(-x));
+export interface TeamStats {
+  teamId: number;
+  teamName: string;
+  leagueId: number;
+  leagueName: string;
+  gamesPlayed: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  cleanSheets: number;
+  homeRecord?: { played: number; wins: number; draws: number; losses: number; goalsFor: number; goalsAgainst: number };
+  awayRecord?: { played: number; wins: number; draws: number; losses: number; goalsFor: number; goalsAgainst: number };
+  form?: string[];
+  position?: number;
 }
 
-function poisson(goals: number, lambda: number): number {
-  return (Math.pow(lambda, goals) * Math.exp(-lambda)) / factorial(goals);
+export interface H2HFxture {
+  id: number;
+  date: string;
+  competition: string;
+  home_team: { name: string };
+  away_team: { name: string };
+  home_score: number;
+  away_score: number;
 }
 
-function factorial(n: number): number {
-  if (n <= 1) return 1;
-  let result = 1;
-  for (let i = 2; i <= n; i++) result *= i;
+export interface FormFixture {
+  id: number;
+  date: string;
+  league: string;
+  opponent: string;
+  isHome: boolean;
+  home_score: number;
+  away_score: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  result: string;
+}
+
+export interface PredictionInput {
+  homeTeam: { id: number; name: string };
+  awayTeam: { id: number; name: string };
+  league: { id: number; name: string };
+  homeStats: TeamStats | null;
+  awayStats: TeamStats | null;
+  homeForm: FormFixture[] | null;
+  awayForm: FormFixture[] | null;
+  h2hFixtures: H2HFxture[];
+  h2hSummary: { total: number; home_wins: number; away_wins: number; draws: number; goals: { home: number; away: number } };
+  injuries?: { homeInjured: string[]; awayInjured: string[] };
+}
+
+export interface Prediction {
+  predictedWinner: 'home' | 'draw' | 'away';
+  homeWin: number;
+  draw: number;
+  awayWin: number;
+  correctScore: string;
+  homeGoals: number;
+  awayGoals: number;
+  confidence: number;
+  overUnder: 'over' | 'under';
+  overUnderProb: number;
+  btts: 'yes' | 'no';
+  bttsProb: number;
+  expectedHomeGoals: number;
+  expectedAwayGoals: number;
+  totalGoals: number;
+  firstHalfWinner: 'home' | 'draw' | 'away';
+  firstHalfScore: string;
+  firstHalfProb: number;
+  homeAttackStrength: number;
+  awayAttackStrength: number;
+  homeDefenseStrength: number;
+  awayDefenseStrength: number;
+  insights: string[];
+  dataQuality: 'high' | 'medium' | 'low';
+  missingData: string[];
+}
+
+function poisson(k: number, lambda: number): number {
+  if (lambda <= 0) return k === 0 ? 1 : 0;
+  if (lambda > 700) lambda = 700;
+  let result = Math.exp(-lambda);
+  for (let i = 1; i <= k; i++) {
+    result *= lambda / i;
+  }
   return result;
 }
 
-function calculateExpectedGoals(team: Team, opponent: Team, isHome: boolean, teamForms: TeamForm[], leagueAvgGoals: number): number {
-  const form = teamForms.find(f => f.team_id === team.id);
-  const attackStrength = form ? form.goals_scored / 5 : leagueAvgGoals;
-  const defenseStrength = form ? form.goals_conceded / 5 : leagueAvgGoals;
-  
-  const baseLambda = isHome ? leagueAvgGoals * 1.1 : leagueAvgGoals * 0.9;
-  const attackMultiplier = attackStrength / leagueAvgGoals;
-  const defenseMultiplier = leagueAvgGoals / defenseStrength;
-  
-  return Math.max(0.3, Math.min(4, baseLambda * attackMultiplier * defenseMultiplier));
-}
+export function generatePrediction(input: PredictionInput): Prediction {
+  const missingData: string[] = [];
+  const insights: string[] = [];
 
-function calculateDrawProbability(expectedHomeGoals: number, expectedAwayGoals: number): number {
+  const avgLeagueGoals = 2.6;
+  const avgLeagueHomeGoals = 1.45;
+  const avgLeagueAwayGoals = 1.15;
+
+  let homeAttack = 1.0;
+  let homeDefense = 1.0;
+  let awayAttack = 1.0;
+  let awayDefense = 1.0;
+
+  if (input.homeStats && input.homeStats.homeRecord && input.homeStats.homeRecord.played > 0) {
+    homeAttack = (input.homeStats.homeRecord.goalsFor / input.homeStats.homeRecord.played) / avgLeagueHomeGoals;
+    homeDefense = (input.homeStats.homeRecord.goalsAgainst / input.homeStats.homeRecord.played) / avgLeagueHomeGoals;
+  } else if (input.homeStats && input.homeStats.gamesPlayed > 0) {
+    homeAttack = (input.homeStats.goalsFor / input.homeStats.gamesPlayed) / avgLeagueGoals;
+    homeDefense = (input.homeStats.goalsAgainst / input.homeStats.gamesPlayed) / avgLeagueGoals;
+  } else {
+    missingData.push(`${input.homeTeam.name} season stats`);
+  }
+
+  if (input.awayStats && input.awayStats.awayRecord && input.awayStats.awayRecord.played > 0) {
+    awayAttack = (input.awayStats.awayRecord.goalsFor / input.awayStats.awayRecord.played) / avgLeagueAwayGoals;
+    awayDefense = (input.awayStats.awayRecord.goalsAgainst / input.awayStats.awayRecord.played) / avgLeagueAwayGoals;
+  } else if (input.awayStats && input.awayStats.gamesPlayed > 0) {
+    awayAttack = (input.awayStats.goalsFor / input.awayStats.gamesPlayed) / avgLeagueGoals;
+    awayDefense = (input.awayStats.goalsAgainst / input.awayStats.gamesPlayed) / avgLeagueGoals;
+  } else {
+    missingData.push(`${input.awayTeam.name} season stats`);
+  }
+
+  homeAttack = Math.max(0.3, Math.min(2.5, homeAttack));
+  homeDefense = Math.max(0.3, Math.min(2.5, homeDefense));
+  awayAttack = Math.max(0.3, Math.min(2.5, awayAttack));
+  awayDefense = Math.max(0.3, Math.min(2.5, awayDefense));
+
+  let expectedHomeGoals = homeAttack * awayDefense * avgLeagueHomeGoals;
+  let expectedAwayGoals = awayAttack * homeDefense * avgLeagueAwayGoals;
+
+  if (input.homeForm && input.homeForm.length >= 3) {
+    const recentGoalsFor = input.homeForm.slice(0, 5).reduce((s, f) => s + f.goalsFor, 0) / Math.min(5, input.homeForm.length);
+    const recentGoalsAgainst = input.homeForm.slice(0, 5).reduce((s, f) => s + f.goalsAgainst, 0) / Math.min(5, input.homeForm.length);
+    const formAttack = recentGoalsFor / avgLeagueHomeGoals;
+    const formDefense = recentGoalsAgainst / avgLeagueHomeGoals;
+    expectedHomeGoals = expectedHomeGoals * 0.8 + (formAttack * awayDefense * avgLeagueHomeGoals) * 0.2;
+  } else if (!input.homeForm) {
+    missingData.push(`${input.homeTeam.name} recent form`);
+  }
+
+  if (input.awayForm && input.awayForm.length >= 3) {
+    const recentGoalsFor = input.awayForm.slice(0, 5).reduce((s, f) => s + f.goalsFor, 0) / Math.min(5, input.awayForm.length);
+    const recentGoalsAgainst = input.awayForm.slice(0, 5).reduce((s, f) => s + f.goalsAgainst, 0) / Math.min(5, input.awayForm.length);
+    const formAttack = recentGoalsFor / avgLeagueAwayGoals;
+    const formDefense = recentGoalsAgainst / avgLeagueAwayGoals;
+    expectedAwayGoals = expectedAwayGoals * 0.8 + (formAttack * homeDefense * avgLeagueAwayGoals) * 0.2;
+  } else if (!input.awayForm) {
+    missingData.push(`${input.awayTeam.name} recent form`);
+  }
+
+  if (input.h2hSummary.total >= 2) {
+    const h2hAvgHomeGoals = input.h2hFixtures.filter(f => f.home_team.name === input.homeTeam.name).length > 0
+      ? input.h2hFixtures.filter(f => f.home_team.name === input.homeTeam.name).reduce((s, f) => s + f.home_score, 0) / input.h2hFixtures.filter(f => f.home_team.name === input.homeTeam.name).length
+      : input.h2hSummary.goals.home / input.h2hSummary.total;
+
+    const h2hAvgAwayGoals = input.h2hFixtures.filter(f => f.away_team.name === input.awayTeam.name).length > 0
+      ? input.h2hFixtures.filter(f => f.away_team.name === input.awayTeam.name).reduce((s, f) => s + f.away_score, 0) / input.h2hFixtures.filter(f => f.away_team.name === input.awayTeam.name).length
+      : input.h2hSummary.goals.away / input.h2hSummary.total;
+
+    const h2hWeight = Math.min(0.15, input.h2hSummary.total * 0.02);
+    expectedHomeGoals = expectedHomeGoals * (1 - h2hWeight) + h2hAvgHomeGoals * h2hWeight;
+    expectedAwayGoals = expectedAwayGoals * (1 - h2hWeight) + h2hAvgAwayGoals * h2hWeight;
+  }
+
+  if (input.injuries?.homeInjured && input.injuries.homeInjured.length > 0) {
+    const keyPlayers = input.injuries.homeInjured.length;
+    expectedHomeGoals *= Math.max(0.7, 1 - keyPlayers * 0.1);
+    insights.push(`${input.homeTeam.name} missing ${keyPlayers} key player(s)`);
+  }
+  if (input.injuries?.awayInjured && input.injuries.awayInjured.length > 0) {
+    const keyPlayers = input.injuries.awayInjured.length;
+    expectedAwayGoals *= Math.max(0.7, 1 - keyPlayers * 0.1);
+    insights.push(`${input.awayTeam.name} missing ${keyPlayers} key player(s)`);
+  }
+
+  expectedHomeGoals = Math.max(0.2, Math.min(4.0, expectedHomeGoals));
+  expectedAwayGoals = Math.max(0.2, Math.min(4.0, expectedAwayGoals));
+
+  let homeWinProb = 0;
   let drawProb = 0;
-  for (let i = 0; i <= 5; i++) {
-    const homeProb = poisson(i, expectedHomeGoals);
-    const awayProb = poisson(i, expectedAwayGoals);
-    drawProb += homeProb * awayProb;
-  }
-  return Math.min(0.5, drawProb);
-}
+  let awayWinProb = 0;
 
-export function generatePrediction(
-  match: Match,
-  homeTeam: Team,
-  awayTeam: Team,
-  teamForms: TeamForm[] = mockTeamForms,
-  h2hMatches: HeadToHead[] = mockHeadToHeads,
-  injuries: Injury[] = mockInjuries
-): Prediction {
-  const leagueAvgGoals = 2.5;
-  const homeAdvantage = 0.08;
-
-  const homeForm = teamForms.find(f => f.team_id === homeTeam.id);
-  const awayForm = teamForms.find(f => f.team_id === awayTeam.id);
-  
-  const formScoreHome = homeForm ? homeForm.form_score / 100 : 0.5;
-  const formScoreAway = awayForm ? awayForm.form_score / 100 : 0.5;
-
-  const relevantH2h = h2hMatches.filter(h => 
-    (h.home_team_id === homeTeam.id && h.away_team_id === awayTeam.id) ||
-    (h.home_team_id === awayTeam.id && h.away_team_id === homeTeam.id)
-  );
-  
-  let h2hHomeWins = 0, h2hAwayWins = 0, h2hDraws = 0;
-  relevantH2h.forEach(h => {
-    if (h.home_score === h.away_score) h2hDraws++;
-    else if (h.home_team_id === homeTeam.id) {
-      h.home_score > h.away_score ? h2hHomeWins++ : h2hAwayWins++;
-    } else {
-      h.away_score > h.home_score ? h2hHomeWins++ : h2hAwayWins++;
+  for (let h = 0; h <= 8; h++) {
+    for (let a = 0; a <= 8; a++) {
+      const jointProb = poisson(h, expectedHomeGoals) * poisson(a, expectedAwayGoals);
+      if (h > a) homeWinProb += jointProb;
+      else if (a > h) awayWinProb += jointProb;
+      else drawProb += jointProb;
     }
-  });
-  const totalH2h = h2hHomeWins + h2hAwayWins + h2hDraws || 1;
-  const h2hHomeStrength = (h2hHomeWins + h2hDraws * 0.5) / totalH2h;
-  const h2hAwayStrength = (h2hAwayWins + h2hDraws * 0.5) / totalH2h;
-
-  const homeInjuries = injuries.filter(i => i.team_id === homeTeam.id);
-  const awayInjuries = injuries.filter(i => i.team_id === awayTeam.id);
-  const homeInjuryImpact = homeInjuries.reduce((sum, i) => sum + i.impact_score, 0) / 100;
-  const awayInjuryImpact = awayInjuries.reduce((sum, i) => sum + i.impact_score, 0) / 100;
-
-  const eloDiff = (homeTeam.elo_rating - awayTeam.elo_rating) / 100;
-  const eloHomeStrength = sigmoid(eloDiff + homeAdvantage);
-
-  const strengthHome = 
-    WEIGHTS.form * formScoreHome +
-    WEIGHTS.h2h * h2hHomeStrength +
-    WEIGHTS.homeAway * 0.6 +
-    WEIGHTS.elo * eloHomeStrength -
-    WEIGHTS.defense * homeInjuryImpact;
-
-  const strengthAway = 
-    WEIGHTS.form * formScoreAway +
-    WEIGHTS.h2h * h2hAwayStrength +
-    WEIGHTS.homeAway * 0.4 +
-    WEIGHTS.elo * (1 - eloHomeStrength) -
-    WEIGHTS.defense * awayInjuryImpact;
-
-  const totalStrength = strengthHome + strengthAway;
-  const homeProb = (strengthHome / totalStrength) * 100;
-  const awayProb = (strengthAway / totalStrength) * 100;
-  const expectedHomeGoals = calculateExpectedGoals(homeTeam, awayTeam, true, teamForms, leagueAvgGoals);
-  const expectedAwayGoals = calculateExpectedGoals(awayTeam, homeTeam, false, teamForms, leagueAvgGoals);
-  const drawProb = calculateDrawProbability(expectedHomeGoals, expectedAwayGoals);
-
-  const normalizedHome = homeProb / (homeProb + awayProb + drawProb * 100) * 100;
-  const normalizedAway = awayProb / (homeProb + awayProb + drawProb * 100) * 100;
-  const normalizedDraw = drawProb * 100 / (homeProb + awayProb + drawProb * 100) * 100;
-
-  const confidenceScore = Math.round(
-    Math.abs(normalizedHome - normalizedAway) * 0.6 +
-    (homeForm?.form_score || 50) * 0.2 +
-    (awayForm?.form_score || 50) * 0.2
-  );
-
-  let predictedWinner: 'home' | 'draw' | 'away' = 'home';
-  if (normalizedDraw > normalizedHome && normalizedDraw > normalizedAway) {
-    predictedWinner = 'draw';
-  } else if (normalizedAway > normalizedHome) {
-    predictedWinner = 'away';
   }
 
-  let over2_5Prob = 0;
+  const totalProb = homeWinProb + drawProb + awayWinProb;
+  homeWinProb = (homeWinProb / totalProb) * 100;
+  drawProb = (drawProb / totalProb) * 100;
+  awayWinProb = (awayWinProb / totalProb) * 100;
+
+  let predictedWinner: 'home' | 'draw' | 'away';
+  if (homeWinProb >= drawProb && homeWinProb >= awayWinProb) predictedWinner = 'home';
+  else if (awayWinProb >= drawProb && awayWinProb >= homeWinProb) predictedWinner = 'away';
+  else predictedWinner = 'draw';
+
+  const scoreProbs: { home: number; away: number; prob: number }[] = [];
   for (let h = 0; h <= 6; h++) {
     for (let a = 0; a <= 6; a++) {
+      scoreProbs.push({ home: h, away: a, prob: poisson(h, expectedHomeGoals) * poisson(a, expectedAwayGoals) });
+    }
+  }
+  scoreProbs.sort((a, b) => b.prob - a.prob);
+
+  let correctHomeGoals: number;
+  let correctAwayGoals: number;
+
+  if (predictedWinner === 'home') {
+    const winning = scoreProbs.filter(s => s.home > s.away);
+    if (winning.length > 0) {
+      correctHomeGoals = winning[0].home;
+      correctAwayGoals = winning[0].away;
+    } else {
+      correctHomeGoals = Math.round(expectedHomeGoals);
+      correctAwayGoals = Math.max(0, Math.round(expectedAwayGoals) - 1);
+    }
+  } else if (predictedWinner === 'away') {
+    const winning = scoreProbs.filter(s => s.away > s.home);
+    if (winning.length > 0) {
+      correctHomeGoals = winning[0].home;
+      correctAwayGoals = winning[0].away;
+    } else {
+      correctHomeGoals = Math.max(0, Math.round(expectedHomeGoals) - 1);
+      correctAwayGoals = Math.round(expectedAwayGoals);
+    }
+  } else {
+    const draws = scoreProbs.filter(s => s.home === s.away);
+    if (draws.length > 0) {
+      correctHomeGoals = draws[0].home;
+      correctAwayGoals = draws[0].away;
+    } else {
+      const avg = Math.round((expectedHomeGoals + expectedAwayGoals) / 2);
+      correctHomeGoals = avg;
+      correctAwayGoals = avg;
+    }
+  }
+
+  let overUnderProb = 0;
+  for (let h = 0; h <= 8; h++) {
+    for (let a = 0; a <= 8; a++) {
       if (h + a > 2.5) {
-        over2_5Prob += poisson(h, expectedHomeGoals) * poisson(a, expectedAwayGoals);
+        overUnderProb += poisson(h, expectedHomeGoals) * poisson(a, expectedAwayGoals);
       }
     }
   }
 
-  const insights = generateInsights(
-    homeTeam, awayTeam, homeForm, awayForm,
-    relevantH2h, homeInjuries, awayInjuries,
-    normalizedHome, normalizedAway, normalizedDraw
-  );
+  const overUnder: 'over' | 'under' = overUnderProb > 0.5 ? 'over' : 'under';
+  if (overUnder === 'under') overUnderProb = 1 - overUnderProb;
 
-  const valueBet = calculateValueBet(normalizedHome, normalizedAway, normalizedDraw);
+  let bttsProb = 0;
+  for (let h = 1; h <= 8; h++) {
+    for (let a = 1; a <= 8; a++) {
+      bttsProb += poisson(h, expectedHomeGoals) * poisson(a, expectedAwayGoals);
+    }
+  }
+  const btts: 'yes' | 'no' = bttsProb > 0.5 ? 'yes' : 'no';
+  if (btts === 'no') bttsProb = 1 - bttsProb;
+
+  const fhHome = expectedHomeGoals * 0.42;
+  const fhAway = expectedAwayGoals * 0.42;
+  let fhHomeWin = 0, fhDraw = 0, fhAwayWin = 0;
+  for (let h = 0; h <= 3; h++) {
+    for (let a = 0; a <= 3; a++) {
+      const p = poisson(h, fhHome) * poisson(a, fhAway);
+      if (h > a) fhHomeWin += p;
+      else if (a > h) fhAwayWin += p;
+      else fhDraw += p;
+    }
+  }
+  const fhTotal = fhHomeWin + fhDraw + fhAwayWin;
+  let firstHalfWinner: 'home' | 'draw' | 'away';
+  let firstHalfProb: number;
+  if (fhHomeWin > fhDraw && fhHomeWin > fhAwayWin) { firstHalfWinner = 'home'; firstHalfProb = fhHomeWin / fhTotal * 100; }
+  else if (fhAwayWin > fhDraw && fhAwayWin > fhHomeWin) { firstHalfWinner = 'away'; firstHalfProb = fhAwayWin / fhTotal * 100; }
+  else { firstHalfWinner = 'draw'; firstHalfProb = fhDraw / fhTotal * 100; }
+  const firstHalfScore = `${Math.round(fhHome)}-${Math.round(fhAway)}`;
+
+  let dataQuality: 'high' | 'medium' | 'low' = 'high';
+  if (missingData.length > 2) dataQuality = 'low';
+  else if (missingData.length > 0) dataQuality = 'medium';
+
+  const probSpread = Math.max(homeWinProb, drawProb, awayWinProb) - Math.min(homeWinProb, drawProb, awayWinProb);
+  const confidence = Math.min(95, Math.max(40, Math.round(
+    probSpread * 0.5 +
+    (dataQuality === 'high' ? 30 : dataQuality === 'medium' ? 20 : 10) +
+    Math.min(10, Math.abs(expectedHomeGoals - expectedAwayGoals) * 5)
+  )));
+
+  if (input.homeStats?.position) insights.push(`${input.homeTeam.name} ${input.homeStats.position} in ${input.homeStats.leagueName}`);
+  if (input.awayStats?.position) insights.push(`${input.awayTeam.name} ${input.awayStats.position} in ${input.awayStats.leagueName}`);
+
+  if (input.homeForm && input.homeForm.length >= 3) {
+    const last5 = input.homeForm.slice(0, 5);
+    const pts = last5.reduce((s, f) => s + (f.result === 'W' ? 3 : f.result === 'D' ? 1 : 0), 0);
+    insights.push(`${input.homeTeam.name} form: ${last5.map(f => f.result).join(' ')} (${pts}/15 pts)`);
+  }
+  if (input.awayForm && input.awayForm.length >= 3) {
+    const last5 = input.awayForm.slice(0, 5);
+    const pts = last5.reduce((s, f) => s + (f.result === 'W' ? 3 : f.result === 'D' ? 1 : 0), 0);
+    insights.push(`${input.awayTeam.name} form: ${last5.map(f => f.result).join(' ')} (${pts}/15 pts)`);
+  }
+
+  if (input.h2hSummary.total >= 2) {
+    const h2hHome = input.h2hFixtures.filter(f => f.home_team.name === input.homeTeam.name).length;
+    const h2hAway = input.h2hFixtures.filter(f => f.away_team.name === input.awayTeam.name).length;
+    if (h2hHome > 0 || h2hAway > 0) {
+      insights.push(`H2H: ${input.homeTeam.name} ${input.h2hSummary.home_wins}W-${input.h2hSummary.draws}D-${input.h2hSummary.away_wins}L vs ${input.awayTeam.name}`);
+    }
+  }
+
+  insights.push(`Expected goals: ${expectedHomeGoals.toFixed(1)} - ${expectedAwayGoals.toFixed(1)}`);
 
   return {
-    id: match.id,
-    match_id: match.id,
-    predicted_winner: predictedWinner,
-    home_probability: Math.round(normalizedHome),
-    draw_probability: Math.round(normalizedDraw),
-    away_probability: Math.round(normalizedAway),
-    expected_home_goals: Math.round(expectedHomeGoals * 10) / 10,
-    expected_away_goals: Math.round(expectedAwayGoals * 10) / 10,
-    confidence_score: Math.min(99, confidenceScore),
-    over_2_5_probability: Math.round(over2_5Prob * 100),
+    predictedWinner,
+    homeWin: Math.round(homeWinProb),
+    draw: Math.round(drawProb),
+    awayWin: Math.round(awayWinProb),
+    correctScore: `${correctHomeGoals}-${correctAwayGoals}`,
+    homeGoals: correctHomeGoals,
+    awayGoals: correctAwayGoals,
+    confidence,
+    overUnder,
+    overUnderProb: Math.round(overUnderProb * 100),
+    btts,
+    bttsProb: Math.round(bttsProb * 100),
+    expectedHomeGoals: Math.round(expectedHomeGoals * 10) / 10,
+    expectedAwayGoals: Math.round(expectedAwayGoals * 10) / 10,
+    totalGoals: Math.round((expectedHomeGoals + expectedAwayGoals) * 10) / 10,
+    firstHalfWinner,
+    firstHalfScore,
+    firstHalfProb: Math.round(firstHalfProb),
+    homeAttackStrength: Math.round(homeAttack * 100) / 100,
+    awayAttackStrength: Math.round(awayAttack * 100) / 100,
+    homeDefenseStrength: Math.round(homeDefense * 100) / 100,
+    awayDefenseStrength: Math.round(awayDefense * 100) / 100,
     insights,
-    value_bet: valueBet
+    dataQuality,
+    missingData
   };
-}
-
-function generateInsights(
-  homeTeam: Team,
-  awayTeam: Team,
-  homeForm: TeamForm | undefined,
-  awayForm: TeamForm | undefined,
-  h2h: HeadToHead[],
-  homeInjuries: Injury[],
-  awayInjuries: Injury[],
-  homeProb: number,
-  awayProb: number,
-  drawProb: number
-): string[] {
-  const insights: string[] = [];
-
-  if (homeForm && awayForm) {
-    if (homeForm.wins / (homeForm.wins + homeForm.draws + homeForm.losses || 1) > 0.7) {
-      insights.push(`${homeTeam.name} winning ${homeForm.wins}/5 recent home matches`);
-    }
-    if (awayForm.losses / (awayForm.wins + awayForm.draws + awayForm.losses || 1) > 0.5) {
-      insights.push(`${awayTeam.name} struggling away (${awayForm.losses} losses in last 5)`);
-    }
-  }
-
-  if (h2h.length > 0) {
-    const recentH2h = h2h.slice(0, 5);
-    let overs = 0;
-    recentH2h.forEach(m => {
-      if ((m.home_score + m.away_score) > 2.5) overs++;
-    });
-    if (overs >= 3) {
-      insights.push(`Last ${h2h.length} H2H: ${overs} overs → goals likely`);
-    }
-  }
-
-  if (homeInjuries.length > 0) {
-    const keyInjuries = homeInjuries.filter(i => i.impact_score >= 10);
-    if (keyInjuries.length > 0) {
-      insights.push(`${homeTeam.name} missing ${keyInjuries.map(i => i.player_name).join(', ')} (injury impact)`);
-    }
-  }
-
-  if (awayInjuries.length > 0) {
-    const keyInjuries = awayInjuries.filter(i => i.impact_score >= 10);
-    if (keyInjuries.length > 0) {
-      insights.push(`${awayTeam.name} missing ${keyInjuries.map(i => i.player_name).join(', ')} (injury impact)`);
-    }
-  }
-
-  if (homeProb > 55) {
-    insights.push(`${homeTeam.name} favored at ${Math.round(homeProb)}% probability`);
-  } else if (awayProb > 55) {
-    insights.push(`${awayTeam.name} favored at ${Math.round(awayProb)}% probability`);
-  }
-
-  if (insights.length < 3) {
-    insights.push(`${homeTeam.name} has ELO advantage of ${homeTeam.elo_rating - awayTeam.elo_rating} points`);
-  }
-
-  return insights;
-}
-
-function calculateValueBet(homeProb: number, awayProb: number, drawProb: number) {
-  const bookmakerOdds = {
-    home: 2.1,
-    draw: 3.4,
-    away: 3.2
-  };
-
-  const impliedHome = 100 / bookmakerOdds.home;
-  const impliedDraw = 100 / bookmakerOdds.draw;
-  const impliedAway = 100 / bookmakerOdds.away;
-
-  const valueHome = homeProb - impliedHome;
-  const valueDraw = drawProb - impliedDraw;
-  const valueAway = awayProb - impliedAway;
-
-  if (valueHome > 5) {
-    return {
-      exists: true,
-      bet: 'Home Win',
-      ev_percent: Math.round(valueHome * 10) / 10
-    };
-  } else if (valueAway > 5) {
-    return {
-      exists: true,
-      bet: 'Away Win',
-      ev_percent: Math.round(valueAway * 10) / 10
-    };
-  } else if (valueDraw > 5) {
-    return {
-      exists: true,
-      bet: 'Draw',
-      ev_percent: Math.round(valueDraw * 10) / 10
-    };
-  }
-
-  return { exists: false, bet: '', ev_percent: 0 };
-}
-
-export function calculateAccuracy(predictions: Prediction[], matches: Match[]): number {
-  let correct = 0;
-  
-  predictions.forEach(pred => {
-    const match = matches.find(m => m.id === pred.match_id);
-    if (!match || match.status !== 'finished') return;
-    
-    let actualWinner: 'home' | 'draw' | 'away';
-    if (match.home_score > match.away_score) {
-      actualWinner = 'home';
-    } else if (match.away_score > match.home_score) {
-      actualWinner = 'away';
-    } else {
-      actualWinner = 'draw';
-    }
-    
-    if (pred.predicted_winner === actualWinner) {
-      correct++;
-    }
-  });
-
-  const finishedMatches = matches.filter(m => m.status === 'finished');
-  return finishedMatches.length > 0 
-    ? Math.round((correct / finishedMatches.length) * 100) 
-    : 0;
 }

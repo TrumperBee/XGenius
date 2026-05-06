@@ -17,33 +17,18 @@ export function LiveMatchCard({ match }: LiveMatchCardProps) {
   const matchDate = new Date(match.date);
   
   useEffect(() => {
-    const homeTeam = {
-      id: match.home_team.id,
-      name: match.home_team.name,
-      short_name: match.home_team.short_name,
-      league_id: 1,
-      elo_rating: 1750
-    };
-    const awayTeam = {
-      id: match.away_team.id,
-      name: match.away_team.name,
-      short_name: match.away_team.short_name,
-      league_id: 1,
-      elo_rating: 1750
-    };
-    
-    const matchData = {
-      id: match.id,
-      league_id: match.league_id,
-      home_team_id: match.home_team.id,
-      away_team_id: match.away_team.id,
-      home_score: 0,
-      away_score: 0,
-      status: 'scheduled' as const,
-      start_time: match.date
-    };
-    
-    setPrediction(generatePrediction(matchData, homeTeam, awayTeam));
+    const pred = generatePrediction({
+      homeTeam: { id: match.home_team.id, name: match.home_team.name },
+      awayTeam: { id: match.away_team.id, name: match.away_team.name },
+      league: { id: match.league_id, name: match.league },
+      homeStats: null,
+      awayStats: null,
+      homeForm: null,
+      awayForm: null,
+      h2hFixtures: [],
+      h2hSummary: { total: 0, home_wins: 0, away_wins: 0, draws: 0, goals: { home: 0, away: 0 } }
+    });
+    setPrediction(pred);
   }, [match]);
 
   const isLive = match.status === 'live';
@@ -98,9 +83,9 @@ export function LiveMatchCard({ match }: LiveMatchCardProps) {
                 <div>
                   <p className="text-xs text-[var(--text-muted)] mb-1">Prediction</p>
                   <p className="font-semibold">
-                    {prediction.predicted_winner === 'draw' 
+                    {prediction.predictedWinner === 'draw' 
                       ? 'Draw' 
-                      : prediction.predicted_winner === 'home' 
+                      : prediction.predictedWinner === 'home' 
                         ? match.home_team.short_name 
                         : match.away_team.short_name}
                   </p>
@@ -110,22 +95,15 @@ export function LiveMatchCard({ match }: LiveMatchCardProps) {
                   <div className="text-center">
                     <p className="text-xs text-[var(--text-muted)] mb-1">Probabilities</p>
                     <div className="flex gap-2 text-xs font-mono">
-                      <span className="text-green-400">{prediction.home_probability}%</span>
-                      <span className="text-gray-400">{prediction.draw_probability}%</span>
-                      <span className="text-red-400">{prediction.away_probability}%</span>
+                      <span className="text-green-400">{prediction.homeWin}%</span>
+                      <span className="text-gray-400">{prediction.draw}%</span>
+                      <span className="text-red-400">{prediction.awayWin}%</span>
                     </div>
                   </div>
 
-                  <ConfidenceGauge score={prediction.confidence_score} size="sm" />
+                  <ConfidenceGauge score={prediction.confidence} size="sm" />
                 </div>
               </div>
-
-              {prediction.value_bet?.exists && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs text-yellow-400">
-                  <Zap className="w-3 h-3" />
-                  <span>Value bet: {prediction.value_bet.bet} (EV +{prediction.value_bet.ev_percent}%)</span>
-                </div>
-              )}
             </div>
           )}
         </CardContent>
@@ -184,7 +162,6 @@ export function LiveMatches({ date }: LiveMatchesProps) {
 
   return (
     <div className="space-y-4">
-      {/* Header with verification */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Calendar className="w-5 h-5 text-[var(--text-muted)]" />
@@ -198,14 +175,12 @@ export function LiveMatches({ date }: LiveMatchesProps) {
         </div>
       </div>
 
-      {/* Warning for partial data */}
       {verification?.recommended_action === 'show_with_warning' && (
         <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-sm text-yellow-400">
-          ⚠️ Some data may be outdated. Predictions are estimates.
+          Some data may be outdated. Predictions are estimates.
         </div>
       )}
 
-      {/* Matches grid */}
       <div className="grid gap-4 md:grid-cols-2">
         {matches.map(match => (
           <LiveMatchCard key={match.id} match={match} />
