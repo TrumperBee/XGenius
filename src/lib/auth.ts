@@ -1,4 +1,4 @@
-import { auth, db, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, googleProvider, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, serverTimestamp, updateDoc, deleteDoc } from './firebase';
+import { auth, db, signInWithRedirect, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, googleProvider, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, serverTimestamp, updateDoc, deleteDoc } from './firebase';
 
 export interface User {
   id: string;
@@ -73,17 +73,8 @@ export async function signUpWithEmail(email: string, password: string, fullName?
 
 export async function signInWithGoogle() {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    
-    await setDoc(doc(db, 'profiles', result.user.uid), {
-      id: result.user.uid,
-      email: result.user.email,
-      full_name: result.user.displayName || result.user.email?.split('@')[0] || 'User',
-      avatar_url: result.user.photoURL || null,
-      created_at: new Date().toISOString()
-    }, { merge: true });
-    
-    return { data: result.user, error: null };
+    await signInWithRedirect(auth, googleProvider);
+    return { data: null, error: null };
   } catch (e: any) {
     return { data: null, error: e };
   }
@@ -149,6 +140,19 @@ export async function ensureProfileExists(userId: string, email: string, fullNam
 export function onAuthStateChange(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, async (firebaseUser: any) => {
     if (firebaseUser) {
+      const profileRef = doc(db, 'profiles', firebaseUser.uid);
+      const profileDoc = await getDoc(profileRef);
+      
+      if (!profileDoc.exists()) {
+        await setDoc(profileRef, {
+          id: firebaseUser.uid,
+          email: firebaseUser.email,
+          full_name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+          avatar_url: firebaseUser.photoURL || null,
+          created_at: new Date().toISOString()
+        }, { merge: true });
+      }
+      
       const user = await getCurrentUser();
       callback(user);
     } else {
