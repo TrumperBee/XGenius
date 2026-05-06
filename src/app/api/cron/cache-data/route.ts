@@ -186,11 +186,98 @@ export async function GET(request: Request) {
       await new Promise(r => setTimeout(r, 200));
     }
 
+    console.log(`Cached form for ${Math.min(teamList.length, 50)} teams`);
+
+    console.log('Fetching H2H data for upcoming fixtures...');
+    const h2hPairs = new Set<string>();
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+
+      const response = await fetch(
+        `${API_BASE}/fixtures?date=${dateStr}&timezone=UTC`,
+        { headers: { 'x-apisports-key': API_KEY } }
+      );
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const fixtures = (data.response || []).filter((f: any) => ALLOWED_LEAGUE_IDS.includes(f.league.id));
+
+      for (const f of fixtures.slice(0, 20)) {
+        const homeId = f.teams.home.id;
+        const awayId = f.teams.away.id;
+        const minId = Math.min(homeId, awayId);
+        const maxId = Math.max(homeId, awayId);
+        const pairKey = `${minId}_${maxId}`;
+        
+        if (!h2hPairs.has(pairKey)) {
+          h2hPairs.add(pairKey);
+          
+          try {
+            const h2hResponse = await fetch(
+              `${API_BASE}/fixtures?h2h=${homeId}-${awayId}&last=10`,
+              { headers: { 'x-apisports-key': API_KEY } }
+            );
+
+            if (h2hResponse.ok) {
+              const h2hData = await h2hResponse.json();
+              const rawH2H = h2hData.response || [];
+              
+              const h2hFixtures = rawH2H
+                .filter((hf: any) => hf.score?.fulltime?.home !== null)
+                .map((hf: any) => ({
+                  id: hf.fixture.id,
+                  date: hf.fixture.date,
+                  league: hf.league.name,
+                  competition: hf.league.name,
+                  home_team: { id: hf.teams.home.id, name: hf.teams.home.name, logo: hf.teams.home.logo },
+                  away_team: { id: hf.teams.away.id, name: hf.teams.away.name, logo: hf.teams.away.logo },
+                  home_score: hf.score.fulltime.home ?? 0,
+                  away_score: hf.score.fulltime.away ?? 0,
+                  winner: hf.score.fulltime.home > hf.score.fulltime.away ? 'home' : 
+                          hf.score.fulltime.away > hf.score.fulltime.home ? 'away' : 'draw'
+                }));
+
+              if (h2hFixtures.length > 0) {
+                const homeWins = h2hFixtures.filter((hf: any) => hf.winner === 'home').length;
+                const awayWins = h2hFixtures.filter((hf: any) => hf.winner === 'away').length;
+                const draws = h2hFixtures.filter((hf: any) => hf.winner === 'draw').length;
+
+                await saveToFirestore('h2h_cache', pairKey, {
+                  team1_id: minId,
+                  team2_id: maxId,
+                  fixtures: h2hFixtures,
+                  summary: {
+                    total: h2hFixtures.length,
+                    home_wins: homeWins,
+                    away_wins: awayWins,
+                    draws,
+                    goals: {
+                      home: h2hFixtures.reduce((sum: number, hf: any) => sum + (hf.home_score || 0), 0),
+                      away: h2hFixtures.reduce((sum: number, hf: any) => sum + (hf.away_score || 0), 0)
+                    }
+                  }
+                });
+                results.h2h++;
+              }
+            }
+            
+            await new Promise(r => setTimeout(r, 300));
+          } catch (e) {
+            console.error(`H2H error for ${pairKey}:`, e);
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       results: {
         fixtures: results.fixtures,
         teams: results.teams.size,
+        h2h: results.h2h,
         cached_at: new Date().toISOString()
       }
     });
