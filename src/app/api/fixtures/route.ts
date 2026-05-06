@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ALLOWED_LEAGUE_IDS, TIER_1_LEAGUES, TIER_2_LEAGUES } from '@/config/leagues';
 
 const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
@@ -6,7 +7,18 @@ const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
 const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgenius-b8ffe';
 
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
-const TOP_LEAGUE_IDS = [39, 140, 78, 135, 61, 2, 3, 848, 88, 94];
+
+const TOP_TIER_TEAM_IDS = new Set([
+  33, 34, 35, 36, 39, 40, 41, 42, 44, 45, 46, 47, 48, 49, 50, 51, 52, 33, 55, 56, 57, 58, 65, 66, 80, 81, 85, 157, 160, 161, 162, 163, 164, 165, 167, 168, 169, 170, 171, 172, 173, 176, 178, 179, 180, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 211, 212, 214, 228, 237, 244, 281, 294, 398, 496, 497, 498, 499, 500, 505, 516, 529, 541, 543, 546, 547, 548, 610, 715, 720, 724, 727, 728, 730, 731, 732, 738, 744, 745, 746, 747, 748, 749, 750, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 793, 794, 795, 796, 797, 798, 799, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830, 831, 832, 833, 834, 835, 836, 837, 838, 839, 840, 841, 842, 843, 844, 845, 846, 847, 848, 849, 850
+]);
+
+const FIFA_TOP_50_NATIONS = new Set([
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+  21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+  41, 42, 43, 44, 45, 46, 47, 48, 49, 50
+]);
+
+const FRIENDLY_LEAGUE_IDS = [666, 667];
 
 async function getFromFirestore(collection: string, whereField?: string, whereValue?: string) {
   if (!FIREBASE_API_KEY) return null;
@@ -140,6 +152,34 @@ async function fetchFromAPI(path: string): Promise<any> {
   return response.json();
 }
 
+function isAllowedFriendly(fixture: any): boolean {
+  const leagueId = fixture.league?.id;
+  const isFriendly = FRIENDLY_LEAGUE_IDS.includes(leagueId);
+  
+  if (!isFriendly) return true;
+  
+  const isInternational = leagueId === 667;
+  const isClub = leagueId === 666;
+  
+  if (isInternational) {
+    return true;
+  }
+  
+  if (isClub) {
+    const homeId = fixture.teams?.home?.id;
+    const awayId = fixture.teams?.away?.id;
+    return TOP_TIER_TEAM_IDS.has(homeId) || TOP_TIER_TEAM_IDS.has(awayId);
+  }
+  
+  return false;
+}
+
+function isFIFAInternationalWindow(dateStr: string): boolean {
+  const date = new Date(dateStr);
+  const month = date.getMonth();
+  return [2, 5, 8, 10].includes(month);
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dateParam = searchParams.get('date');
@@ -177,7 +217,14 @@ export async function GET(request: Request) {
       const apiMatches = data.response || [];
 
       const matches = apiMatches
-        .filter((f: any) => TOP_LEAGUE_IDS.includes(f.league.id))
+        .filter((f: any) => ALLOWED_LEAGUE_IDS.includes(f.league.id))
+        .filter((f: any) => isAllowedFriendly(f))
+        .filter((f: any) => {
+          if (f.league.id === 667) {
+            return isFIFAInternationalWindow(dateStr);
+          }
+          return true;
+        })
         .map((f: any) => ({
           id: f.fixture.id,
           date: f.fixture.date,

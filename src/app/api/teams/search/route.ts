@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
+import { ALLOWED_LEAGUES } from '@/config/leagues';
 
 const API_KEY = process.env.FOOTBALL_API_KEY;
 const API_BASE = 'https://v3.football.api-sports.io';
+
+const ALLOWED_LEAGUE_NAMES = new Set(ALLOWED_LEAGUES.map(l => l.name.toLowerCase()));
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -31,14 +34,19 @@ export async function GET(request: Request) {
     }
 
     const data = await response.json();
-    const teams = (data.response || []).map((team: any) => ({
-      id: team.team.id,
-      name: team.team.name,
-      short_name: team.team.code || team.team.name.substring(0, 3).toUpperCase(),
-      logo: team.team.logo,
-      country: team.team.country,
-      league: team.team.league?.name || 'Unknown'
-    }));
+    const teams = (data.response || [])
+      .filter((team: any) => {
+        const leagueName = team.team.league?.name?.toLowerCase();
+        return leagueName && ALLOWED_LEAGUE_NAMES.has(leagueName);
+      })
+      .map((team: any) => ({
+        id: team.team.id,
+        name: team.team.name,
+        short_name: team.team.code || team.team.name.substring(0, 3).toUpperCase(),
+        logo: team.team.logo,
+        country: team.team.country,
+        league: team.team.league?.name || 'Unknown'
+      }));
 
     console.log('Team search for', search, ':', teams.length, 'results');
     return NextResponse.json({ teams, total: teams.length });

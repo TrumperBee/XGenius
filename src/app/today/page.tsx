@@ -7,6 +7,7 @@ import { NetworkStatusBanner, NetworkStatusIndicator } from '@/components/Networ
 import { useLoading } from '@/components/LoadingContext';
 import { Search, Loader2, X, Calendar, Clock, Shield, Trophy, Star } from 'lucide-react';
 import Link from 'next/link';
+import { ALLOWED_LEAGUES, getLeagueColor, getLeagueById } from '@/config/leagues';
 
 interface Match {
   id: number;
@@ -29,39 +30,10 @@ interface Team {
   country?: string;
 }
 
-const LEAGUE_PRIORITY: Record<string, number> = {
-  'uefa champions league': 1,
-  'champions league': 1,
-  'uefa europa league': 2,
-  'europa league': 2,
-  'premier league': 3,
-  'la liga': 4,
-  'bundesliga': 5,
-  'serie a': 6,
-  'ligue 1': 7,
-  'eredivisie': 8,
-  'primeira liga': 9,
-};
-
-function getLeaguePriority(leagueName: string): number {
-  const lower = leagueName.toLowerCase();
-  for (const [key, priority] of Object.entries(LEAGUE_PRIORITY)) {
-    if (lower.includes(key)) return priority;
-  }
-  return 100;
-}
-
-function getLeagueColor(leagueName: string): string {
-  const lower = leagueName.toLowerCase();
-  if (lower.includes('champions')) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-  if (lower.includes('premier')) return 'bg-red-500/20 text-red-400 border-red-500/30';
-  if (lower.includes('liga') && lower.includes(' BBVA')) return 'bg-yellow-400/20 text-yellow-300';
-  if (lower.includes('laliga')) return 'bg-yellow-400/20 text-yellow-300';
-  if (lower.includes('bundesliga')) return 'bg-red-600/20 text-red-300';
-  if (lower.includes('serie a')) return 'bg-green-500/20 text-green-400';
-  if (lower.includes('ligue')) return 'bg-blue-500/20 text-blue-400';
-  if (lower.includes('europa')) return 'bg-orange-500/20 text-orange-400';
-  return 'bg-gray-500/20 text-gray-400';
+function getLeaguePriority(leagueId: number): number {
+  const index = ALLOWED_LEAGUES.findIndex(l => l.id === leagueId);
+  if (index !== -1) return ALLOWED_LEAGUES[index].tier * 100 + index;
+  return 999;
 }
 
 export default function TodayPage() {
@@ -170,8 +142,8 @@ export default function TodayPage() {
     }
     
     result.sort((a, b) => {
-      const priorityA = getLeaguePriority(a.league);
-      const priorityB = getLeaguePriority(b.league);
+      const priorityA = getLeaguePriority(a.league_id);
+      const priorityB = getLeaguePriority(b.league_id);
       if (priorityA !== priorityB) return priorityA - priorityB;
       return new Date(a.date).getTime() - new Date(b.date).getTime();
     });
@@ -354,7 +326,7 @@ export default function TodayPage() {
             {Object.entries(groupedByLeague).map(([league, leagueMatches]) => (
               <div key={league}>
                 <div className="flex items-center gap-3 mb-4">
-                  <Trophy className={`w-5 h-5 ${league.toLowerCase().includes('champions') ? 'text-yellow-400' : 'text-[var(--text-muted)]'}`} />
+                  <Trophy className={`w-5 h-5 ${getLeagueColor(league)}`} />
                   <h2 className="text-lg font-bold">{league}</h2>
                   <Badge variant="info">{leagueMatches.length}</Badge>
                   {league.toLowerCase().includes('champions') && <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />}

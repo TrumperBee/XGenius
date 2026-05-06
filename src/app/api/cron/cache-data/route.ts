@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ALLOWED_LEAGUE_IDS } from '@/config/leagues';
 
 const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
@@ -6,7 +7,6 @@ const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
 const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgenius-b8ffe';
 
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
-const TOP_LEAGUE_IDS = [39, 140, 78, 135, 61, 2, 3, 848, 88, 94];
 
 async function saveToFirestore(collection: string, docId: string, data: any) {
   if (!FIREBASE_API_KEY) return;
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
 
       const data = await response.json();
       const fixtures = (data.response || [])
-        .filter((f: any) => TOP_LEAGUE_IDS.includes(f.league.id))
+        .filter((f: any) => ALLOWED_LEAGUE_IDS.includes(f.league.id))
         .map((f: any) => ({
           id: f.fixture.id,
           date: f.fixture.date,

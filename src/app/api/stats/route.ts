@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
+import { ALLOWED_LEAGUE_IDS } from '@/config/leagues';
 
 const API_KEY = process.env.FOOTBALL_API_KEY;
 const API_BASE = 'https://v3.football.api-sports.io';
-
-const TOP_LEAGUE_IDS = [39, 140, 78, 135, 61];
 
 const memoryCache: { data: any; timestamp: number } | null = null;
 const CACHE_DURATION = 5 * 60 * 1000;
@@ -169,7 +168,7 @@ async function fetchResultsForDays(days: number): Promise<any[]> {
       if (!response.ok) continue;
       
       const data = await response.json();
-      const matches = (data.response || []).filter((f: any) => TOP_LEAGUE_IDS.includes(f.league.id));
+      const matches = (data.response || []).filter((f: any) => ALLOWED_LEAGUE_IDS.includes(f.league.id));
       results.push(...matches);
       
       await new Promise(r => setTimeout(r, 200));

@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
+import { ALLOWED_LEAGUE_IDS } from '@/config/leagues';
 
 const API_KEY = process.env.FOOTBALL_API_KEY || '';
 const API_BASE = 'https://v3.football.api-sports.io';
-
-const LEAGUE_IDS = [39, 140, 78, 135, 61];
 
 function seededRandom(seed: number): number {
   const x = Math.sin(seed) * 10000;
@@ -200,7 +199,7 @@ export async function GET(request: Request) {
     const allMatches = (data.response || []) as any[];
     
     const matches = allMatches
-      .filter(f => LEAGUE_IDS.includes(f.league.id))
+      .filter(f => ALLOWED_LEAGUE_IDS.includes(f.league.id))
       .map(f => {
         const homeScore = f.score.fulltime.home ?? 0;
         const awayScore = f.score.fulltime.away ?? 0;

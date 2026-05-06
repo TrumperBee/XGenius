@@ -7,6 +7,7 @@ import { NetworkStatusBanner, NetworkStatusIndicator } from '@/components/Networ
 import { useLoading } from '@/components/LoadingContext';
 import { Search, Loader2, X, Calendar, Clock, Star, Trophy, Zap, ChevronDown, Filter } from 'lucide-react';
 import Link from 'next/link';
+import { ALLOWED_LEAGUES, ALLOWED_LEAGUE_IDS, DEFAULT_VISIBLE_LEAGUES, LEAGUE_TIERS, getLeagueColor } from '@/config/leagues';
 
 interface Fixture {
   id: number;
@@ -29,44 +30,10 @@ interface Team {
   country?: string;
 }
 
-const TOP_LEAGUES = [
-  { id: 39, name: 'Premier League', short: 'PL' },
-  { id: 140, name: 'La Liga', short: 'LL' },
-  { id: 78, name: 'Bundesliga', short: 'BL' },
-  { id: 135, name: 'Serie A', short: 'SA' },
-  { id: 61, name: 'Ligue 1', short: 'L1' },
-  { id: 2, name: 'Champions League', short: 'UCL' },
-  { id: 3, name: 'Europa League', short: 'UEL' },
-  { id: 848, name: 'Conference League', short: 'UECL' },
-];
-
-const SECOND_TIER = [
-  { id: 88, name: 'Eredivisie', short: 'ED' },
-  { id: 94, name: 'Primeira Liga', short: 'PL' },
-  { id: 179, name: 'Scottish Premiership', short: 'SP' },
-  { id: 203, name: 'Turkish Super Lig', short: 'TSL' },
-  { id: 117, name: 'AFCON', short: 'AFCON' },
-  { id: 29, name: 'Euros', short: 'EUR' },
-];
-
 function getLeaguePriority(leagueId: number): number {
-  const topIndex = TOP_LEAGUES.findIndex(l => l.id === leagueId);
-  if (topIndex !== -1) return topIndex;
-  const secondIndex = SECOND_TIER.findIndex(l => l.id === leagueId);
-  if (secondIndex !== -1) return 10 + secondIndex;
-  return 100;
-}
-
-function getLeagueColor(leagueName: string): string {
-  const lower = leagueName.toLowerCase();
-  if (lower.includes('champions')) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-  if (lower.includes('europa')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-  if (lower.includes('premier')) return 'bg-red-500/20 text-red-400 border-red-500/30';
-  if (lower.includes('la liga')) return 'bg-yellow-400/20 text-yellow-300 border-yellow-400/30';
-  if (lower.includes('bundesliga')) return 'bg-red-600/20 text-red-300 border-red-600/30';
-  if (lower.includes('serie')) return 'bg-green-500/20 text-green-400 border-green-500/30';
-  if (lower.includes('ligue')) return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-  return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+  const index = ALLOWED_LEAGUES.findIndex(l => l.id === leagueId);
+  if (index !== -1) return ALLOWED_LEAGUES[index].tier * 100 + index;
+  return 999;
 }
 
 export default function FixturesPage() {
@@ -78,8 +45,9 @@ export default function FixturesPage() {
   const [searching, setSearching] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [showSearch, setShowSearch] = useState(false);
-  const [selectedLeagues, setSelectedLeagues] = useState<number[]>(TOP_LEAGUES.map(l => l.id));
+  const [selectedLeagues, setSelectedLeagues] = useState<number[]>(DEFAULT_VISIBLE_LEAGUES.map(l => l.id));
   const [showAllLeagues, setShowAllLeagues] = useState(false);
+  const [expandedTiers, setExpandedTiers] = useState<Set<number>>(new Set([1, 2]));
   const [filterOpen, setFilterOpen] = useState(false);
   const { isTabLoading } = useLoading();
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -183,7 +151,7 @@ export default function FixturesPage() {
       );
     }
     
-    if (selectedLeagues.length < TOP_LEAGUES.length + SECOND_TIER.length) {
+    if (selectedLeagues.length < ALLOWED_LEAGUE_IDS.length) {
       result = result.filter(f => selectedLeagues.includes(f.league_id));
     }
     
@@ -220,9 +188,22 @@ export default function FixturesPage() {
     return groups;
   }, [filteredAndSortedFixtures]);
 
-  const visibleLeagues = showAllLeagues 
-    ? [...TOP_LEAGUES, ...SECOND_TIER]
-    : TOP_LEAGUES;
+  const toggleTier = (tier: number) => {
+    setExpandedTiers(prev => {
+      const next = new Set(prev);
+      if (next.has(tier)) {
+        next.delete(tier);
+      } else {
+        next.add(tier);
+      }
+      return next;
+    });
+  };
+
+  const visibleTierContent = LEAGUE_TIERS.map(tier => ({
+    ...tier,
+    isExpanded: expandedTiers.has(tier.leagues[0]?.tier || 99)
+  }));
 
   return (
     <NetworkStatusBanner>
@@ -294,7 +275,7 @@ export default function FixturesPage() {
             <button
               onClick={() => setFilterOpen(!filterOpen)}
               className={`p-2.5 rounded-lg transition-colors min-w-[48px] min-h-[48px] flex items-center justify-center border ${
-                filterOpen || selectedLeagues.length < TOP_LEAGUES.length
+                filterOpen || selectedLeagues.length < DEFAULT_VISIBLE_LEAGUES.length
                   ? 'bg-[var(--accent-blue)]/20 border-[var(--accent-blue)]/50 text-[var(--accent-blue)]'
                   : 'bg-[var(--bg-tertiary)] border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
               }`}
@@ -317,39 +298,62 @@ export default function FixturesPage() {
         {filterOpen && (
           <Card className="border-[var(--accent-blue)]/30">
             <CardContent className="py-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium">Filter Competitions</h3>
                 <button
-                  onClick={() => setSelectedLeagues(TOP_LEAGUES.map(l => l.id))}
+                  onClick={() => {
+                    setSelectedLeagues(DEFAULT_VISIBLE_LEAGUES.map(l => l.id));
+                    setExpandedTiers(new Set([1, 2]));
+                  }}
                   className="text-xs text-[var(--accent-blue)] hover:underline"
                 >
                   Reset
                 </button>
               </div>
               
-              <div className="flex flex-wrap gap-2">
-                {visibleLeagues.map(league => (
-                  <button
-                    key={league.id}
-                    onClick={() => toggleLeague(league.id)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all min-h-[40px] ${
-                      selectedLeagues.includes(league.id)
-                        ? 'bg-[var(--accent-green)] text-white'
-                        : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                    }`}
-                  >
-                    {league.name}
-                  </button>
-                ))}
+              <div className="space-y-4">
+                {visibleTierContent.map((tier) => {
+                  if (tier.leagues.length === 0) return null;
+                  const isExpanded = tier.isExpanded;
+                  const tierNum = tier.leagues[0]?.tier;
+                  
+                  return (
+                    <div key={tier.label}>
+                      <button
+                        onClick={() => toggleTier(tierNum || 99)}
+                        className="flex items-center justify-between w-full text-left mb-2"
+                      >
+                        <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">{tier.label}</span>
+                        <ChevronDown className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                      
+                      {isExpanded && (
+                        <div className="flex flex-wrap gap-2">
+                          {tier.leagues.map(league => (
+                            <button
+                              key={league.id}
+                              onClick={() => toggleLeague(league.id)}
+                              className={`px-3 py-2 rounded-lg text-sm font-medium transition-all min-h-[40px] ${
+                                selectedLeagues.includes(league.id)
+                                  ? 'bg-[var(--accent-green)] text-white'
+                                  : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                              }`}
+                            >
+                              {league.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               
-              <button
-                onClick={() => setShowAllLeagues(!showAllLeagues)}
-                className="mt-3 text-sm text-[var(--accent-blue)] hover:underline flex items-center gap-1"
-              >
-                {showAllLeagues ? 'Show less' : 'Show more competitions'}
-                <ChevronDown className={`w-4 h-4 transition-transform ${showAllLeagues ? 'rotate-180' : ''}`} />
-              </button>
+              <div className="mt-4 pt-3 border-t border-[var(--border-color)]">
+                <p className="text-xs text-[var(--text-muted)]">
+                  Missing a league? <button className="text-[var(--accent-blue)] hover:underline">Request it here</button>
+                </p>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -397,7 +401,7 @@ export default function FixturesPage() {
               </p>
               <button 
                 onClick={() => {
-                  setSelectedLeagues(TOP_LEAGUES.map(l => l.id));
+                  setSelectedLeagues(DEFAULT_VISIBLE_LEAGUES.map(l => l.id));
                   setSelectedTeam(null);
                   setSearchQuery('');
                 }}
@@ -412,7 +416,7 @@ export default function FixturesPage() {
             {Object.entries(groupByLeague).map(([league, leagueFixtures]) => (
               <div key={league}>
                 <div className="flex items-center gap-3 mb-3">
-                  <Trophy className={`w-5 h-5 ${league.toLowerCase().includes('champions') ? 'text-yellow-400' : 'text-[var(--text-muted)]'}`} />
+                  <Trophy className={`w-5 h-5 ${getLeagueColor(league)}`} />
                   <h2 className="text-base font-bold">{league}</h2>
                   <Badge variant="info" className="text-xs">{leagueFixtures.length}</Badge>
                   {league.toLowerCase().includes('champions') && <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />}
