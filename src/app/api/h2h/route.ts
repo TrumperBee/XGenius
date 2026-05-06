@@ -14,7 +14,13 @@ async function getFromFirestore(collection: string, docId: string) {
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
-    return { id: data.name?.split('/').pop(), ...convertFirestoreFields(data.fields || {}) };
+    if (!data.fields) return null;
+    const fields = convertFirestoreFields(data.fields || {});
+    // Only return if there's actual H2H data
+    if (fields.fixtures && Array.isArray(fields.fixtures) && fields.fixtures.length > 0) {
+      return { id: data.name?.split('/').pop(), ...fields };
+    }
+    return null;
   } catch {
     return null;
   }

@@ -9,16 +9,18 @@ const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_
 
 async function getFromFirestore(collection: string, docId: string) {
   if (!FIREBASE_API_KEY) return null;
-
   try {
     const url = `${FIRESTORE_BASE}/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
-    return {
-      id: data.name?.split('/').pop(),
-      ...convertFirestoreFields(data.fields || {})
-    };
+    if (!data.fields) return null;
+    const fields = convertFirestoreFields(data.fields || {});
+    // Only return if there's actual data
+    if (fields.fixtures && Array.isArray(fields.fixtures) && fields.fixtures.length > 0) {
+      return { id: data.name?.split('/').pop(), ...fields };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -111,17 +113,21 @@ export async function GET(request: Request) {
   }
 
   try {
+    console.log(`Fetching form for team ${teamId} from API...`);
     const response = await fetch(`${API_BASE}/fixtures?team=${teamId}&last=10&status=FT`, {
       headers: { 'x-apisports-key': API_KEY },
       signal: AbortSignal.timeout(15000)
     });
 
     if (!response.ok) {
+      console.error(`API error for team ${teamId}: ${response.status}`);
       return NextResponse.json({ success: true, fixtures: [], summary: null, form: [], source: 'api' });
     }
 
     const data = await response.json();
     const rawFixtures = data.response || [];
+    
+    console.log(`Raw fixtures for team ${teamId}: ${rawFixtures.length}`);
     
     const fixtures: Array<{ id: number; date: string; league: string; opponent: string; opponentShort: string; isHome: boolean; home_score: number; away_score: number; goalsFor: number; goalsAgainst: number; result: string }> = rawFixtures
       .filter((f: any) => f.score?.fulltime?.home !== null)
@@ -145,6 +151,8 @@ export async function GET(request: Request) {
         };
       });
 
+    console.log(`Processed fixtures: ${fixtures.length}`);
+
     const summary = {
       total: fixtures.length,
       wins: fixtures.filter((f: { result: string }) => f.result === 'W').length,
@@ -155,12 +163,14 @@ export async function GET(request: Request) {
       cleanSheets: fixtures.filter((f: { goalsAgainst: number }) => f.goalsAgainst === 0).length
     };
 
-    await saveToFirestore('team_form_cache', teamId, {
-      team_id: Number(teamId),
-      form_data: fixtures.slice(0, 5).map(f => f.result),
-      summary,
-      fixtures
-    });
+    if (fixtures.length > 0) {
+      await saveToFirestore('team_form_cache', teamId, {
+        team_id: Number(teamId),
+        form_data: fixtures.slice(0, 5).map(f => f.result),
+        summary,
+        fixtures
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -171,6 +181,7 @@ export async function GET(request: Request) {
     });
 
   } catch (error) {
+    console.error(`Form fetch error for team ${teamId}:`, error);
     return NextResponse.json({ success: false, fixtures: [], summary: null, form: [], source: 'error' });
   }
 }

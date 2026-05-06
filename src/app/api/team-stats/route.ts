@@ -13,7 +13,13 @@ async function getFromCache(cacheKey: string) {
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
-    return convertFields(data.fields || {});
+    if (!data.fields) return null;
+    const fields = convertFields(data.fields || {});
+    // Only return if there's actual data
+    if (fields.gamesPlayed && fields.gamesPlayed > 0) {
+      return fields;
+    }
+    return null;
   } catch {
     return null;
   }
