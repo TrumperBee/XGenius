@@ -124,7 +124,7 @@ export async function GET(request: Request) {
     const data = await response.json();
     const rawFixtures = data.response || [];
     
-    const fixtures = rawFixtures
+    const fixtures: Array<{ id: number; date: string; league: string; competition: string; home_team: { id: number; name: string; logo: string }; away_team: { id: number; name: string; logo: string }; home_score: number; away_score: number; winner: string }> = rawFixtures
       .filter((f: any) => f.score?.fulltime?.home !== null)
       .map((f: any) => ({
         id: f.fixture.id,
@@ -140,12 +140,12 @@ export async function GET(request: Request) {
 
     const summary = {
       total: fixtures.length,
-      home_wins: fixtures.filter(f => f.winner === 'home').length,
-      away_wins: fixtures.filter(f => f.winner === 'away').length,
-      draws: fixtures.filter(f => f.winner === 'draw').length,
+      home_wins: fixtures.filter((f: { winner: string }) => f.winner === 'home').length,
+      away_wins: fixtures.filter((f: { winner: string }) => f.winner === 'away').length,
+      draws: fixtures.filter((f: { winner: string }) => f.winner === 'draw').length,
       goals: {
-        home: fixtures.reduce((s, f) => s + (f.home_score || 0), 0),
-        away: fixtures.reduce((s, f) => s + (f.away_score || 0), 0)
+        home: fixtures.reduce((s: number, f: { home_score: number }) => s + (f.home_score || 0), 0),
+        away: fixtures.reduce((s: number, f: { away_score: number }) => s + (f.away_score || 0), 0)
       }
     };
 

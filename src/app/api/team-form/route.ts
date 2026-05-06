@@ -123,7 +123,7 @@ export async function GET(request: Request) {
     const data = await response.json();
     const rawFixtures = data.response || [];
     
-    const fixtures = rawFixtures
+    const fixtures: Array<{ id: number; date: string; league: string; opponent: string; opponentShort: string; isHome: boolean; home_score: number; away_score: number; goalsFor: number; goalsAgainst: number; result: string }> = rawFixtures
       .filter((f: any) => f.score?.fulltime?.home !== null)
       .slice(0, 10)
       .map((f: any) => {
@@ -147,12 +147,12 @@ export async function GET(request: Request) {
 
     const summary = {
       total: fixtures.length,
-      wins: fixtures.filter(f => f.result === 'W').length,
-      draws: fixtures.filter(f => f.result === 'D').length,
-      losses: fixtures.filter(f => f.result === 'L').length,
-      goalsFor: fixtures.reduce((s, f) => s + f.goalsFor, 0),
-      goalsAgainst: fixtures.reduce((s, f) => s + f.goalsAgainst, 0),
-      cleanSheets: fixtures.filter(f => f.goalsAgainst === 0).length
+      wins: fixtures.filter((f: { result: string }) => f.result === 'W').length,
+      draws: fixtures.filter((f: { result: string }) => f.result === 'D').length,
+      losses: fixtures.filter((f: { result: string }) => f.result === 'L').length,
+      goalsFor: fixtures.reduce((s: number, f: { goalsFor: number }) => s + f.goalsFor, 0),
+      goalsAgainst: fixtures.reduce((s: number, f: { goalsAgainst: number }) => s + f.goalsAgainst, 0),
+      cleanSheets: fixtures.filter((f: { goalsAgainst: number }) => f.goalsAgainst === 0).length
     };
 
     await saveToFirestore('team_form_cache', teamId, {

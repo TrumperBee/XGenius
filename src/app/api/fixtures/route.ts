@@ -8,18 +8,12 @@ const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgen
 
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
-const FRIENDLY_LEAGUE_IDS = [666, 667];
-
-const TOP_TIER_TEAM_IDS = new Set([
-  33, 34, 35, 36, 39, 40, 41, 42, 44, 45, 46, 47, 48, 49, 50, 51, 52, 55, 56, 57, 58, 65, 66, 80, 81, 85, 157, 160, 161, 162, 163, 164, 165, 167, 168, 169, 170, 171, 172, 173, 176, 178, 179, 180, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 211, 212, 214, 228, 237, 244, 281, 294, 398, 496, 497, 498, 499, 500, 505, 516, 529, 541, 543, 546, 547, 548, 610, 715, 720, 724, 727, 728, 730, 731, 732, 738, 744, 745, 746, 747, 748, 749, 750, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 793, 794, 795, 796, 797, 798, 799, 800
-]);
+const LEAGUE_IDS_NO_FRIENDLY = ALLOWED_LEAGUE_IDS.filter(id => id !== 666 && id !== 667);
 
 async function queryFirestoreByDate(dateStr: string) {
   if (!FIREBASE_API_KEY) return [];
-
   try {
     const url = `${FIRESTORE_BASE}/fixtures_cache:runQuery?key=${FIREBASE_API_KEY}`;
-    
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,10 +34,8 @@ async function queryFirestoreByDate(dateStr: string) {
         }
       })
     });
-    
     if (!response.ok) return [];
     const data = await response.json();
-    
     if (!data || !Array.isArray(data)) return [];
     return data
       .filter((item: any) => item.document)
@@ -79,15 +71,12 @@ function convertFirestoreFields(fields: any): any {
 
 async function saveToFirestore(docId: string, data: any) {
   if (!FIREBASE_API_KEY) return;
-
   try {
     const url = `${FIRESTORE_BASE}/fixtures_cache/${docId}?key=${FIREBASE_API_KEY}`;
     await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fields: convertToFirestoreFields(data)
-      })
+      body: JSON.stringify({ fields: convertToFirestoreFields(data) })
     });
   } catch (e) {
     console.error(`Save error:`, e);
@@ -122,34 +111,69 @@ function convertToFirestoreFields(data: any): any {
   return result;
 }
 
-function isAllowedFriendly(fixture: any): boolean {
-  const leagueId = fixture.league?.id;
-  if (!FRIENDLY_LEAGUE_IDS.includes(leagueId)) return true;
-  if (leagueId === 667) return true;
-  if (leagueId === 666) {
-    const homeId = fixture.teams?.home?.id;
-    const awayId = fixture.teams?.away?.id;
-    return TOP_TIER_TEAM_IDS.has(homeId) || TOP_TIER_TEAM_IDS.has(awayId);
-  }
-  return false;
+function mapFixture(f: any): any {
+  return {
+    id: f.fixture.id,
+    date: f.fixture.date,
+    league: f.league.name,
+    league_id: f.league.id,
+    country: f.league.country,
+    home_team: {
+      id: f.teams.home.id,
+      name: f.teams.home.name,
+      short: f.teams.home.name?.substring(0, 3).toUpperCase(),
+      logo: f.teams.home.logo
+    },
+    away_team: {
+      id: f.teams.away.id,
+      name: f.teams.away.name,
+      short: f.teams.away.name?.substring(0, 3).toUpperCase(),
+      logo: f.teams.away.logo
+    },
+    home_score: f.score?.fulltime?.home,
+    away_score: f.score?.fulltime?.away,
+    status: f.status?.short === 'FT' ? 'finished' : f.status?.short === 'LIVE' ? 'live' : 'scheduled',
+    status_long: f.status?.long
+  };
 }
 
-function isFIFAInternationalWindow(dateStr: string): boolean {
-  const date = new Date(dateStr);
-  return [2, 5, 8, 10].includes(date.getMonth());
-}
-
-async function fetchFromAPI(dateStr: string): Promise<any[]> {
+async function fetchLeagueFixtures(dateStr: string, leagueId: number): Promise<any[]> {
   if (!API_KEY) return [];
+  try {
+    const response = await fetch(`${API_BASE}/fixtures?date=${dateStr}&league=${leagueId}&timezone=UTC`, {
+      headers: { 'x-apisports-key': API_KEY },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.response || [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchFriendlies(dateStr: string): Promise<any[]> {
+  if (!API_KEY) return [];
+  const results: any[] = [];
   
-  const response = await fetch(`${API_BASE}/fixtures?date=${dateStr}&timezone=UTC`, {
-    headers: { 'x-apisports-key': API_KEY },
-    signal: AbortSignal.timeout(15000)
-  });
+  const months = new Date(dateStr).getMonth();
+  if (![2, 5, 8, 10].includes(months)) return results;
   
-  if (!response.ok) return [];
-  const data = await response.json();
-  return data.response || [];
+  for (const leagueId of [666, 667]) {
+    try {
+      const response = await fetch(`${API_BASE}/fixtures?date=${dateStr}&league=${leagueId}&timezone=UTC`, {
+        headers: { 'x-apisports-key': API_KEY },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        results.push(...(data.response || []));
+      }
+    } catch {
+      continue;
+    }
+  }
+  return results;
 }
 
 export async function GET(request: Request) {
@@ -177,7 +201,7 @@ export async function GET(request: Request) {
   }
 
   if (needsCache && API_KEY) {
-    console.log('Cache miss - fetching from API and caching...');
+    console.log('Cache miss - fetching from API league-by-league and caching...');
     allMatches.length = 0;
     
     for (let i = 0; i < days; i++) {
@@ -185,39 +209,24 @@ export async function GET(request: Request) {
       currentDate.setDate(currentDate.getDate() + i);
       const dateStr = currentDate.toISOString().split('T')[0];
 
-      const apiMatches = await fetchFromAPI(dateStr);
-      
-      const matches = apiMatches
-        .filter((f: any) => ALLOWED_LEAGUE_IDS.includes(f.league.id))
-        .filter((f: any) => isAllowedFriendly(f))
-        .filter((f: any) => f.league.id !== 667 || isFIFAInternationalWindow(dateStr))
-        .map((f: any) => ({
-          id: f.fixture.id,
-          date: f.fixture.date,
-          league: f.league.name,
-          league_id: f.league.id,
-          country: f.league.country,
-          home_team: {
-            id: f.teams.home.id,
-            name: f.teams.home.name,
-            short: f.teams.home.name?.substring(0, 3).toUpperCase(),
-            logo: f.teams.home.logo
-          },
-          away_team: {
-            id: f.teams.away.id,
-            name: f.teams.away.name,
-            short: f.teams.away.name?.substring(0, 3).toUpperCase(),
-            logo: f.teams.away.logo
-          },
-          home_score: f.score?.fulltime?.home,
-          away_score: f.score?.fulltime?.away,
-          status: f.status?.short === 'FT' ? 'finished' : f.status?.short === 'LIVE' ? 'live' : 'scheduled',
-          status_long: f.status?.long
-        }));
+      console.log(`Fetching ${LEAGUE_IDS_NO_FRIENDLY.length} leagues for ${dateStr}...`);
 
-      for (const match of matches) {
-        await saveToFirestore(String(match.id), match);
-        allMatches.push(match);
+      const leaguePromises = LEAGUE_IDS_NO_FRIENDLY.map(leagueId => 
+        fetchLeagueFixtures(dateStr, leagueId)
+      );
+      
+      const leagueResults = await Promise.all(leaguePromises);
+      
+      const friendlies = await fetchFriendlies(dateStr);
+      leagueResults.push(friendlies);
+
+      for (const fixtures of leagueResults) {
+        for (const f of fixtures) {
+          if (!ALLOWED_LEAGUE_IDS.includes(f.league.id)) continue;
+          const match = mapFixture(f);
+          await saveToFirestore(String(match.id), match);
+          allMatches.push(match);
+        }
       }
       
       if (i < days - 1) await new Promise(r => setTimeout(r, 200));
