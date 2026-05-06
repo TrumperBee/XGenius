@@ -119,8 +119,8 @@ export default function AnalyzePage() {
     try {
       const [h2hRes, homeFormRes, awayFormRes, homeStatsRes, awayStatsRes] = await Promise.allSettled([
         fetch(`/api/h2h?team1=${selectedHome.id}&team2=${selectedAway.id}`),
-        fetch(`/api/team-form?teamId=${selectedHome.id}&last=10`),
-        fetch(`/api/team-form?teamId=${selectedAway.id}&last=10`),
+        fetch(`/api/team-form?teamId=${selectedHome.id}`),
+        fetch(`/api/team-form?teamId=${selectedAway.id}`),
         fetch(`/api/team-stats?teamId=${selectedHome.id}&season=${season}`),
         fetch(`/api/team-stats?teamId=${selectedAway.id}&season=${season}`)
       ]);

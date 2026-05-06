@@ -6,10 +6,10 @@ const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
 const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'xgenius-b8ffe';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
-async function getFromCache(teamId: string, season: string) {
+async function getFromCache(cacheKey: string) {
   if (!FIREBASE_API_KEY) return null;
   try {
-    const url = `${FIRESTORE_BASE}/team_stats_cache/${teamId}_${season}?key=${FIREBASE_API_KEY}`;
+    const url = `${FIRESTORE_BASE}/team_stats_cache/${cacheKey}?key=${FIREBASE_API_KEY}`;
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
@@ -19,10 +19,10 @@ async function getFromCache(teamId: string, season: string) {
   }
 }
 
-async function saveToCache(teamId: string, season: string, data: any) {
+async function saveToCache(cacheKey: string, data: any) {
   if (!FIREBASE_API_KEY) return;
   try {
-    const url = `${FIRESTORE_BASE}/team_stats_cache/${teamId}_${season}?key=${FIREBASE_API_KEY}`;
+    const url = `${FIRESTORE_BASE}/team_stats_cache/${cacheKey}?key=${FIREBASE_API_KEY}`;
     await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -67,13 +67,15 @@ function convertToFields(data: any): any {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const teamId = searchParams.get('teamId');
+  const leagueId = searchParams.get('leagueId');
   const season = searchParams.get('season') || '2025';
 
   if (!teamId) {
     return NextResponse.json({ error: 'teamId required' }, { status: 400 });
   }
 
-  const cached = await getFromCache(teamId, season);
+  const cacheKey = leagueId ? `${teamId}_${leagueId}_${season}` : `${teamId}_${season}`;
+  const cached = await getFromCache(cacheKey);
   if (cached) {
     return NextResponse.json({ success: true, ...cached, source: 'cache' });
   }
@@ -82,20 +84,32 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, error: 'API key not configured' }, { status: 500 });
   }
 
+  const apiUrl = leagueId 
+    ? `${API_BASE}/teams/statistics?team=${teamId}&league=${leagueId}&season=${season}`
+    : `${API_BASE}/teams/statistics?team=${teamId}&season=${season}`;
+
   try {
-    const response = await fetch(`${API_BASE}/teams/statistics?team=${teamId}&league=&season=${season}`, {
+    const response = await fetch(apiUrl, {
       headers: { 'x-apisports-key': API_KEY },
       signal: AbortSignal.timeout(10000)
     });
 
     if (!response.ok) {
+      console.error(`Team stats API error: ${response.status} for team ${teamId}`);
       return NextResponse.json({ success: false, error: 'Failed to fetch stats' }, { status: 500 });
     }
 
     const data = await response.json();
+    
+    if (!data.response) {
+      console.error(`No response data for team ${teamId}:`, JSON.stringify(data).substring(0, 200));
+      return NextResponse.json({ success: false, error: 'No stats available' }, { status: 404 });
+    }
+    
     const stats = data.response;
 
     if (!stats || !stats.fixtures) {
+      console.error(`Invalid stats structure for team ${teamId}:`, JSON.stringify(stats).substring(0, 200));
       return NextResponse.json({ success: false, error: 'No stats available' }, { status: 404 });
     }
 
@@ -133,11 +147,14 @@ export async function GET(request: Request) {
       position: stats.league?.position || null
     };
 
-    await saveToCache(teamId, season, result);
+    console.log(`Team stats for ${teamId} (${result.teamName}): ${result.gamesPlayed} games, ${result.goalsFor}GF ${result.goalsAgainst}GA`);
+
+    await saveToCache(cacheKey, result);
 
     return NextResponse.json({ success: true, ...result, source: 'api' });
 
   } catch (error) {
+    console.error(`Team stats fetch error for ${teamId}:`, error);
     return NextResponse.json({ success: false, error: 'Request failed' }, { status: 500 });
   }
 }

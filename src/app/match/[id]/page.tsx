@@ -114,10 +114,10 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
 
     try {
       const [homeStatsRes, awayStatsRes, homeFormRes, awayFormRes, h2hRes, homeInjuriesRes, awayInjuriesRes] = await Promise.allSettled([
-        fetch(`/api/team-stats?teamId=${fixture.home_team.id}&season=${season}`),
-        fetch(`/api/team-stats?teamId=${fixture.away_team.id}&season=${season}`),
-        fetch(`/api/team-form?teamId=${fixture.home_team.id}&last=10`),
-        fetch(`/api/team-form?teamId=${fixture.away_team.id}&last=10`),
+        fetch(`/api/team-stats?teamId=${fixture.home_team.id}&leagueId=${fixture.league_id}&season=${season}`),
+        fetch(`/api/team-stats?teamId=${fixture.away_team.id}&leagueId=${fixture.league_id}&season=${season}`),
+        fetch(`/api/team-form?teamId=${fixture.home_team.id}`),
+        fetch(`/api/team-form?teamId=${fixture.away_team.id}`),
         fetch(`/api/h2h?team1=${fixture.home_team.id}&team2=${fixture.away_team.id}`),
         fetch(`/api/injuries?teamId=${fixture.home_team.id}`),
         fetch(`/api/injuries?teamId=${fixture.away_team.id}`)
